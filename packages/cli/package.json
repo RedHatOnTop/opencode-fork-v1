@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "version": "1.0.0",
+  "name": "@opencode-ai/cli",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun run test-prompts.ts"
+  },
+  "exports": {
+    "./system-prompts": "./src/system-prompts/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@opencode-ai/util": "workspace:*"
+  }
+}
