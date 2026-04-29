@@ -118,6 +118,14 @@ export const Info = Schema.Struct({
     description:
       "Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.",
   }),
+  // Shell command allowlist for Default mode
+  shell_allowlist: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Shell commands that are automatically allowed in Default mode",
+  }),
+  // Shell command denylist
+  shell_denylist: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Shell commands that are always denied",
+  }),
   // User-facing plugin config is stored as Specs; provenance gets attached later while configs are merged.
   plugin: Schema.optional(Schema.mutable(Schema.Array(ConfigPlugin.Spec))),
   share: Schema.optional(Schema.Literals(["manual", "auto", "disabled"])).annotate({
@@ -250,6 +258,48 @@ export const Info = Schema.Struct({
       }),
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
+      }),
+    }),
+  ),
+  // Verification loop configuration (R17)
+  verify: Schema.optional(
+    Schema.Struct({
+      commands: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+        description: "Verification commands to run after code changes (default: ['bun typecheck', 'bun test'])",
+      }),
+      auto_fix: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable automatic fix attempts on verification failure (default: true)",
+      }),
+      max_retries: Schema.optional(Schema.Int).annotate({
+        description: "Maximum number of automatic fix attempts (default: 3)",
+      }),
+    }),
+  ),
+  // Approval Mode configuration (R5)
+  approval_mode: Schema.optional(
+    Schema.Literal("strict", "default", "autopilot", "yolo").annotate({
+      description: "Approval mode for tool execution (default: 'default')",
+    }),
+  ),
+  // Blocked commands configuration (R5)
+  blocked_commands: Schema.optional(
+    Schema.Struct({
+      destructive: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+        description: "Additional destructive command patterns to block",
+      }),
+      network: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+        description: "Additional network command patterns to block in Autopilot mode",
+      }),
+      system_install: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+        description: "Additional system installation command patterns to block in Autopilot mode",
+      }),
+    }),
+  ),
+  // Notification configuration (R27)
+  notification: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable or disable OS-level notifications (default: true)",
       }),
     }),
   ),

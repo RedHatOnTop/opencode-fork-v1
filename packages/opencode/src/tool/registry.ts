@@ -12,6 +12,9 @@ import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
+import { BrowseSkillsTool } from "./browse-skills"
+import { SearchSkillsTool } from "./search-skills"
+import { LoadSkillTool } from "./load-skill"
 import * as Tool from "./tool"
 import { Config } from "@/config/config"
 import { type ToolContext as PluginToolContext, type ToolDefinition } from "@opencode-ai/plugin"
@@ -46,6 +49,8 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Bus } from "../bus"
 import { Agent } from "../agent/agent"
 import { Skill } from "../skill"
+import { SkillRegistry } from "../skill/registry"
+import * as TokenBudget from "../skill/budget"
 import { Permission } from "@/permission"
 
 const log = Log.create({ service: "tool.registry" })
@@ -78,6 +83,8 @@ export const layer: Layer.Layer<
   | Todo.Service
   | Agent.Service
   | Skill.Service
+  | SkillRegistry.Service
+  | TokenBudget.Service
   | Session.Service
   | Provider.Service
   | LSP.Service
@@ -115,6 +122,9 @@ export const layer: Layer.Layer<
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
+    const browsetool = yield* BrowseSkillsTool
+    const searchtool = yield* SearchSkillsTool
+    const loadskilltool = yield* LoadSkillTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -204,6 +214,9 @@ export const layer: Layer.Layer<
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          browseSkills: Tool.init(browsetool),
+          searchSkills: Tool.init(searchtool),
+          loadSkill: Tool.init(loadskilltool),
         })
 
         return {
@@ -226,6 +239,9 @@ export const layer: Layer.Layer<
             tool.patch,
             ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [tool.lsp] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [tool.plan] : []),
+            tool.browseSkills,
+            tool.searchSkills,
+            tool.loadSkill,
           ],
           task: tool.task,
           read: tool.read,
@@ -333,6 +349,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Question.defaultLayer),
     Layer.provide(Todo.defaultLayer),
     Layer.provide(Skill.defaultLayer),
+    Layer.provide(SkillRegistry.layer),
+    Layer.provide(TokenBudget.layer()),
     Layer.provide(Agent.defaultLayer),
     Layer.provide(Session.defaultLayer),
     Layer.provide(Provider.defaultLayer),
