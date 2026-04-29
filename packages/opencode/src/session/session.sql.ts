@@ -121,3 +121,61 @@ export const PermissionTable = sqliteTable("permission", {
   ...Timestamps,
   data: text({ mode: "json" }).notNull().$type<Permission.Ruleset>(),
 })
+
+// Task table for Task Planner (R26)
+export const TaskTable = sqliteTable(
+  "task",
+  {
+    id: text().primaryKey(),
+    session_id: text()
+      .$type<SessionID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    subject: text().notNull(),
+    description: text().notNull(),
+    status: text().notNull().$type<"pending" | "in_progress" | "completed">(),
+    owner: text(),
+    blocks: text({ mode: "json" }).$type<string[]>(),
+    blocked_by: text({ mode: "json" }).$type<string[]>(),
+    ...Timestamps,
+  },
+  (table) => [index("task_session_idx").on(table.session_id), index("task_status_idx").on(table.status)],
+)
+
+// Action Queue table for Approval Mode (R19)
+export const ActionQueueTable = sqliteTable(
+  "action_queue",
+  {
+    id: text().primaryKey(),
+    session_id: text()
+      .$type<SessionID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    requested_at: integer().notNull(),
+    reason: text().notNull(),
+    command: text().notNull(),
+    context: text().notNull(),
+    status: text().notNull().$type<"pending" | "approved" | "rejected">().default("pending"),
+  },
+  (table) => [index("action_queue_session_idx").on(table.session_id), index("action_queue_status_idx").on(table.status)],
+)
+
+// Cost tracking table for Cost Tracker (R24)
+export const CostTrackingTable = sqliteTable(
+  "cost_tracking",
+  {
+    id: text().primaryKey(),
+    session_id: text()
+      .$type<SessionID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    model: text().notNull(),
+    input_tokens: integer().notNull(),
+    output_tokens: integer().notNull(),
+    cache_read_tokens: integer().default(0),
+    cache_write_tokens: integer().default(0),
+    estimated_cost: integer().notNull(), // Stored as cents (100 = $1.00)
+    created_at: integer().notNull(),
+  },
+  (table) => [index("cost_tracking_session_idx").on(table.session_id), index("cost_tracking_model_idx").on(table.model)],
+)

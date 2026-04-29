@@ -15,6 +15,9 @@ import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
+import { SkillRegistry } from "@/skill/registry"
+import { getCompactInstructions } from "@/agent/prompt/quality"
+import { Config } from "@/config/config"
 
 export function provider(model: Provider.Model) {
   if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
@@ -43,11 +46,13 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const skill = yield* Skill.Service
+    const registry = yield* SkillRegistry.Service
 
     return Service.of({
       environment(model) {
         const project = Instance.project
-        return [
+        
+        const sections = [
           [
             `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
             `Here is some useful information about the environment you are running in:`,
@@ -60,25 +65,52 @@ export const layer = Layer.effect(
             `</env>`,
           ].join("\n"),
         ]
+        
+        // Always inject quality instructions by default
+        sections.push(getCompactInstructions())
+        
+        return sections
       },
 
       skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info) {
         if (Permission.disabled(["skill"], agent.permission).has("skill")) return
 
-        const list = yield* skill.available(agent)
+        // Use the new SkillRegistry for system prompt generation
+        // This replaces the old Skill.fmt(list, { verbose: true }) full injection
+        const registrySection = yield* registry.systemPromptSection()
 
-        return [
-          "Skills provide specialized instructions and workflows for specific tasks.",
-          "Use the skill tool to load a skill when a task matches its description.",
-          // the agents seem to ingest the information about skills a bit better if we present a more verbose
-          // version of them here and a less verbose version in tool description, rather than vice versa.
-          Skill.fmt(list, { verbose: true }),
-        ].join("\n")
+        // Also include locally discovered skills (backward compatibility)
+        const localList = yield* skill.available(agent)
+        const localOnly = localList.filter(
+          (s) => !s.name.includes("/"), // Local skills don't have owner/ prefix
+        )
+
+        const parts: string[] = []
+
+        // Add the registry-based section (ALWAYS skills + tool guide + categories)
+        if (registrySection) {
+          parts.push(registrySection)
+        }
+
+        // Add local skills that aren't in the registry
+        if (localOnly.length > 0) {
+          parts.push("")
+          parts.push("## Local Skills")
+          parts.push(Skill.fmt(localOnly, { verbose: false }))
+        }
+
+        // Inject quality instructions into skill prompts
+        parts.push("\n" + getCompactInstructions())
+
+        return parts.join("\n")
       }),
     })
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Skill.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(Skill.defaultLayer),
+  Layer.provide(SkillRegistry.layer),
+)
 
 export * as SystemPrompt from "./system"
