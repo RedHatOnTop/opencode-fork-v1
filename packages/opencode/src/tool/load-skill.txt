@@ -1,0 +1,10 @@
+Load the full content of a skill by name.
+
+After finding a skill via browse_skills or search_skills, use this tool
+to load its complete SKILL.md content into your context.
+
+The system manages a token budget — if loading this skill would exceed
+the budget, the least recently used skill will be automatically unloaded.
+
+Usage:
+- load_skill({ name: "git-worktree" })

@@ -1,0 +1,11 @@
+Browse the skill category hierarchy to discover available skills.
+
+Without a category path, returns the top-level categories with skill counts.
+With a category path, returns sub-categories and skills in that category.
+
+Skills are organized in a hierarchy (e.g., "Development and Testing" > "Git Workflows").
+Use this tool to explore what skill categories are available before searching.
+
+Usage:
+- browse_skills() — list top-level categories
+- browse_skills({ category: "Development and Testing" }) — show sub-categories and skills
