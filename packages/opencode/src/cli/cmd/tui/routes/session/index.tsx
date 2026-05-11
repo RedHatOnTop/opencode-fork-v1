@@ -4,6 +4,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  ErrorBoundary,
   For,
   Match,
   on,
@@ -86,15 +87,9 @@ import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
 import { getScrollAcceleration } from "../../util/scroll"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
-import { DialogGoUpsell } from "../../component/dialog-go-upsell"
-import { SessionRetry } from "@/session/retry"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 
 addDefaultParsers(parsers.parsers)
-
-const GO_UPSELL_LAST_SEEN_AT = "go_upsell_last_seen_at"
-const GO_UPSELL_DONT_SHOW = "go_upsell_dont_show"
-const GO_UPSELL_WINDOW = 86_400_000 // 24 hrs
 
 const context = createContext<{
   width: number
@@ -174,7 +169,7 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const contentWidth = createMemo(() => Math.max(0, dimensions().width - (sidebarVisible() ? 42 : 0) - 4))
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -199,10 +194,6 @@ export function Session() {
       if (result.data.workspaceID !== previousWorkspace) {
         project.workspace.set(result.data.workspaceID)
 
-        // Sync all the data for this workspace. Note that this
-        // workspace may not exist anymore which is why this is not
-        // fatal. If it doesn't we still want to show the session
-        // (which will be non-interactive)
         try {
           await sync.bootstrap({ fatal: false })
         } catch {}
@@ -211,11 +202,14 @@ export function Session() {
       if (route.sessionID === sessionID && scroll) scroll.scrollBy(100_000)
     })().catch((error) => {
       if (route.sessionID !== sessionID) return
-      toast.show({
-        message: errorMessage(error),
-        variant: "error",
-        duration: 5000,
-      })
+      const msg = errorMessage(error)
+      if (msg) {
+        toast.show({
+          message: msg,
+          variant: "error",
+          duration: 5000,
+        })
+      }
       navigate({ type: "home" })
     })
   })
@@ -229,9 +223,11 @@ export function Session() {
     if (part.id === lastSwitch) return
 
     if (part.tool === "plan_exit") {
+      local.workflow.setMode("vibe")
       local.agent.set("build")
       lastSwitch = part.id
     } else if (part.tool === "plan_enter") {
+      local.workflow.setMode("spec")
       local.agent.set("plan")
       lastSwitch = part.id
     }
@@ -251,22 +247,8 @@ export function Session() {
   const dialog = useDialog()
   const renderer = useRenderer()
 
-  event.on("session.status", (evt) => {
-    if (evt.properties.sessionID !== route.sessionID) return
-    if (evt.properties.status.type !== "retry") return
-    if (evt.properties.status.message !== SessionRetry.GO_UPSELL_MESSAGE) return
-    if (dialog.stack.length > 0) return
-
-    const seen = kv.get(GO_UPSELL_LAST_SEEN_AT)
-    if (typeof seen === "number" && Date.now() - seen < GO_UPSELL_WINDOW) return
-
-    if (kv.get(GO_UPSELL_DONT_SHOW)) return
-
-    void DialogGoUpsell.show(dialog).then((dontShowAgain) => {
-      if (dontShowAgain) kv.set(GO_UPSELL_DONT_SHOW, true)
-      kv.set(GO_UPSELL_LAST_SEEN_AT, Date.now())
-    })
-  })
+  // Go upsell removed in this fork - no-op handler to preserve event subscription pattern
+  event.on("session.status", () => {})
 
   // Allow exit when in child session (prompt is hidden)
   const exit = useExit()
@@ -1204,27 +1186,45 @@ export function Session() {
               </Show>
             </box>
           </Show>
+          <Show when={!session()}>
+            <box flexGrow={1} />
+            <box flexShrink={0}>
+              <Show when={visible()}>
+                <Prompt
+                  visible={visible()}
+                  ref={bind}
+                  disabled={disabled()}
+                  onSubmit={() => {
+                    toBottom()
+                  }}
+                  sessionID={route.sessionID}
+                />
+              </Show>
+            </box>
+          </Show>
           <Toast />
         </box>
         <Show when={sidebarVisible()}>
-          <Switch>
-            <Match when={wide()}>
-              <Sidebar sessionID={route.sessionID} />
-            </Match>
-            <Match when={!wide()}>
-              <box
-                position="absolute"
-                top={0}
-                left={0}
-                right={0}
-                bottom={0}
-                alignItems="flex-end"
-                backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
-              >
+          <ErrorBoundary fallback={(() => null) as any}>
+            <Switch>
+              <Match when={wide()}>
                 <Sidebar sessionID={route.sessionID} />
-              </box>
-            </Match>
-          </Switch>
+              </Match>
+              <Match when={!wide()}>
+                <box
+                  position="absolute"
+                  top={0}
+                  left={0}
+                  right={0}
+                  bottom={0}
+                  alignItems="flex-end"
+                  backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
+                >
+                  <Sidebar sessionID={route.sessionID} />
+                </box>
+              </Match>
+            </Switch>
+          </ErrorBoundary>
         </Show>
       </box>
     </context.Provider>

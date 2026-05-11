@@ -2,42 +2,30 @@ import { Context, Effect, Layer } from "effect"
 
 import { Instance } from "../project/instance"
 
-import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
-import PROMPT_DEFAULT from "./prompt/default.txt"
-import PROMPT_BEAST from "./prompt/beast.txt"
-import PROMPT_GEMINI from "./prompt/gemini.txt"
-import PROMPT_GPT from "./prompt/gpt.txt"
-import PROMPT_KIMI from "./prompt/kimi.txt"
-
-import PROMPT_CODEX from "./prompt/codex.txt"
-import PROMPT_TRINITY from "./prompt/trinity.txt"
+import PROMPT_UNIFIED from "./prompt/unified.txt"
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
 import { SkillRegistry } from "@/skill/registry"
 import { getCompactInstructions } from "@/agent/prompt/quality"
-import { Config } from "@/config/config"
+import { GraphifyFeature } from "@/feature/graphify"
+import { SubAgent, SubAgentType } from "@/agent/subagent"
+import { Workflow } from "@/workflow/workflow"
+import { Memory } from "@/memory/memory"
 
+/**
+ * Get unified system prompt for all providers.
+ * Provider-specific prompts removed in favor of a single high-quality unified prompt.
+ */
 export function provider(model: Provider.Model) {
-  if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
-    return [PROMPT_BEAST]
-  if (model.api.id.includes("gpt")) {
-    if (model.api.id.includes("codex")) {
-      return [PROMPT_CODEX]
-    }
-    return [PROMPT_GPT]
-  }
-  if (model.api.id.includes("gemini-")) return [PROMPT_GEMINI]
-  if (model.api.id.includes("claude")) return [PROMPT_ANTHROPIC]
-  if (model.api.id.toLowerCase().includes("trinity")) return [PROMPT_TRINITY]
-  if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
-  return [PROMPT_DEFAULT]
+  return [PROMPT_UNIFIED]
 }
 
 export interface Interface {
   readonly environment: (model: Provider.Model) => string[]
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
+  readonly graphify: () => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SystemPrompt") {}
@@ -45,8 +33,8 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Sy
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const skill = yield* Skill.Service
     const registry = yield* SkillRegistry.Service
+    const graphify = yield* GraphifyFeature.Service
 
     return Service.of({
       environment(model) {
@@ -72,37 +60,60 @@ export const layer = Layer.effect(
         return sections
       },
 
-      skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info) {
+      skills: ((agent: Agent.Info) =>
+        Effect.gen(function* () {
+          const workflowOpt = yield* Effect.serviceOption(Workflow.Service)
+          const memoryOpt = yield* Effect.serviceOption(Memory.Service)
+          const subAgentOpt = yield* Effect.serviceOption(SubAgent.Service)
+        
+        const parts: string[] = []
+
+        if (subAgentOpt._tag === "Some") {
+          const subAgentPrompt = yield* subAgentOpt.value.getSystemPromptInjection(agent.name as SubAgentType)
+          if (subAgentPrompt._tag === "Some") {
+            parts.push(subAgentPrompt.value)
+          }
+        }
+
+        if (workflowOpt._tag === "Some") {
+          const workflowPrompt = yield* workflowOpt.value.getSystemPromptInjection()
+          if (workflowPrompt._tag === "Some") {
+            parts.push(workflowPrompt.value)
+          }
+        }
+
+        if (memoryOpt._tag === "Some") {
+          // Pass the last user message or just generic context
+          const memoryPrompt = yield* memoryOpt.value.getSystemPromptInjection()
+          if (memoryPrompt._tag === "Some") {
+            parts.push(memoryPrompt.value)
+          }
+        }
+        // Defensive check: agent might be undefined or not have permission
+        if (!agent || !agent.permission) {
+          // Fallback to default system prompt section when agent info is incomplete
+          const registrySection = yield* registry.systemPromptSection()
+          return registrySection
+        }
+        
         if (Permission.disabled(["skill"], agent.permission).has("skill")) return
 
         // Use the new SkillRegistry for system prompt generation
-        // This replaces the old Skill.fmt(list, { verbose: true }) full injection
-        const registrySection = yield* registry.systemPromptSection()
+        // Check if agent has a specific type for agent-scoped skill access
+        const agentType = agent.name
+        const registrySection = agentType
+          ? yield* registry.systemPromptSectionForAgent(agentType)
+          : yield* registry.systemPromptSection()
 
-        // Also include locally discovered skills (backward compatibility)
-        const localList = yield* skill.available(agent)
-        const localOnly = localList.filter(
-          (s) => !s.name.includes("/"), // Local skills don't have owner/ prefix
-        )
-
-        const parts: string[] = []
-
-        // Add the registry-based section (ALWAYS skills + tool guide + categories)
         if (registrySection) {
           parts.push(registrySection)
         }
 
-        // Add local skills that aren't in the registry
-        if (localOnly.length > 0) {
-          parts.push("")
-          parts.push("## Local Skills")
-          parts.push(Skill.fmt(localOnly, { verbose: false }))
-        }
-
-        // Inject quality instructions into skill prompts
-        parts.push("\n" + getCompactInstructions())
-
         return parts.join("\n")
+      })) as Interface["skills"],
+
+      graphify: Effect.fn("SystemPrompt.graphify")(function* () {
+        return yield* graphify.systemPromptSection()
       }),
     })
   }),
@@ -111,6 +122,10 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(Skill.defaultLayer),
   Layer.provide(SkillRegistry.layer),
+  Layer.provide(GraphifyFeature.layer),
+  Layer.provide(SubAgent.defaultLayer),
+  Layer.provide(Workflow.defaultLayer),
+  Layer.provide(Memory.defaultLayer),
 )
 
 export * as SystemPrompt from "./system"

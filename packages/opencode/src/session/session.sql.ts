@@ -66,7 +66,10 @@ export const PartTable = sqliteTable(
       .$type<MessageID>()
       .notNull()
       .references(() => MessageTable.id, { onDelete: "cascade" }),
-    session_id: text().$type<SessionID>().notNull(),
+    session_id: text()
+      .$type<SessionID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
     ...Timestamps,
     data: text({ mode: "json" }).notNull().$type<PartData>(),
   },

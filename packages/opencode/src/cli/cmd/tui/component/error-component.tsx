@@ -31,9 +31,6 @@ export function ErrorComponent(props: {
   })
   const [copied, setCopied] = createSignal(false)
 
-  const issueURL = new URL("https://github.com/anomalyco/opencode/issues/new?template=bug-report.yml")
-
-  // Choose safe fallback colors per mode since theme context may not be available
   const isLight = props.mode === "light"
   const colors = {
     bg: isLight ? "#ffffff" : "#0a0a0a",
@@ -42,21 +39,16 @@ export function ErrorComponent(props: {
     primary: isLight ? "#3b7dd8" : "#fab283",
   }
 
-  if (props.error.message) {
-    issueURL.searchParams.set("title", `opentui: fatal: ${props.error.message}`)
-  }
+  const fullError = [
+    `Error: ${props.error.message}`,
+    "",
+    props.error.stack ?? "",
+    "",
+    `opencode-version: ${InstallationVersion}`,
+  ].join("\n")
 
-  if (props.error.stack) {
-    issueURL.searchParams.set(
-      "description",
-      "```\n" + props.error.stack.substring(0, 6000 - issueURL.toString().length) + "...\n```",
-    )
-  }
-
-  issueURL.searchParams.set("opencode-version", InstallationVersion)
-
-  const copyIssueURL = () => {
-    void Clipboard.copy(issueURL.toString()).then(() => {
+  const copyErrorText = () => {
+    void Clipboard.copy(fullError).then(() => {
       setCopied(true)
     })
   }
@@ -65,17 +57,16 @@ export function ErrorComponent(props: {
     <box flexDirection="column" gap={1} backgroundColor={colors.bg}>
       <box flexDirection="row" gap={1} alignItems="center">
         <text attributes={TextAttributes.BOLD} fg={colors.text}>
-          Please report an issue.
+          A fatal error occurred!
         </text>
-        <box onMouseUp={copyIssueURL} backgroundColor={colors.primary} padding={1}>
+        <box onMouseUp={copyErrorText} backgroundColor={colors.primary} padding={1}>
           <text attributes={TextAttributes.BOLD} fg={colors.bg}>
-            Copy issue URL (exception info pre-filled)
+            Copy error details
           </text>
         </box>
-        {copied() && <text fg={colors.muted}>Successfully copied</text>}
+        {copied() && <text fg={colors.muted}>Copied</text>}
       </box>
       <box flexDirection="row" gap={2} alignItems="center">
-        <text fg={colors.text}>A fatal error occurred!</text>
         <box onMouseUp={props.reset} backgroundColor={colors.primary} padding={1}>
           <text fg={colors.bg}>Reset TUI</text>
         </box>

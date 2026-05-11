@@ -207,6 +207,7 @@ export function Prompt(props: PromptProps) {
     extmarkToPartIndex: Map<number, number>
     interrupt: number
     placeholder: number
+    isSubmitting: boolean
   }>({
     placeholder: randomIndex(list().length),
     prompt: {
@@ -216,6 +217,7 @@ export function Prompt(props: PromptProps) {
     mode: "normal",
     extmarkToPartIndex: new Map(),
     interrupt: 0,
+    isSubmitting: false,
   })
 
   createEffect(
@@ -653,16 +655,19 @@ export function Prompt(props: PromptProps) {
   ])
 
   async function submit() {
-    // IME: double-defer may fire before onContentChange flushes the last
-    // composed character (e.g. Korean hangul) to the store, so read
-    // plainText directly and sync before any downstream reads.
-    if (input && !input.isDestroyed && input.plainText !== store.prompt.input) {
-      setStore("prompt", "input", input.plainText)
-      syncExtmarksWithPromptParts()
-    }
-    if (props.disabled) return false
-    if (autocomplete?.visible) return false
-    if (!store.prompt.input) return false
+    if (store.isSubmitting) return false
+    setStore("isSubmitting", true)
+    try {
+      // IME: double-defer may fire before onContentChange flushes the last
+      // composed character (e.g. Korean hangul) to the store, so read
+      // plainText directly and sync before any downstream reads.
+      if (input && !input.isDestroyed && input.plainText !== store.prompt.input) {
+        setStore("prompt", "input", input.plainText)
+        syncExtmarksWithPromptParts()
+      }
+      if (props.disabled) return false
+      if (autocomplete?.visible) return false
+      if (!store.prompt.input) return false
     const agent = local.agent.current()
     if (!agent) return false
     const trimmed = store.prompt.input.trim()
@@ -747,6 +752,7 @@ export function Prompt(props: PromptProps) {
     // Capture mode before it gets reset
     const currentMode = store.mode
     const variant = local.model.variant.current()
+    const thinkingEffort = local.model.thinkingEffort.current()
     const editorSelection = fileContextEnabled() ? editor.selection() : undefined
     const editorParts = editorSelection
       ? [
@@ -829,6 +835,7 @@ export function Prompt(props: PromptProps) {
           agent: agent.name,
           model: selectedModel,
           variant,
+          thinkingEffort,
           parts: [
             ...editorParts,
             {
@@ -849,21 +856,31 @@ export function Prompt(props: PromptProps) {
     input.extmarks.clear()
     setStore("prompt", {
       input: "",
-      parts: [],
-    })
-    setStore("extmarkToPartIndex", new Map())
-    props.onSubmit?.()
+        parts: [],
+      })
+      setStore("extmarkToPartIndex", new Map())
+      props.onSubmit?.()
 
-    // temporary hack to make sure the message is sent
-    if (!props.sessionID)
-      setTimeout(() => {
-        route.navigate({
-          type: "session",
-          sessionID,
-        })
-      }, 50)
-    input.clear()
-    return true
+      if (!props.sessionID) {
+        const started = Date.now()
+        const poll = () => {
+          if (sync.session.get(sessionID)) {
+            route.navigate({ type: "session", sessionID })
+            return
+          }
+          if (Date.now() - started > 5000) {
+            route.navigate({ type: "session", sessionID })
+            return
+          }
+          setTimeout(poll, 30)
+        }
+        setTimeout(poll, 30)
+      }
+      input.clear()
+      return true
+    } finally {
+      setStore("isSubmitting", false)
+    }
   }
   const exit = useExit()
 
@@ -1248,7 +1265,7 @@ export function Prompt(props: PromptProps) {
                   {(agent) => (
                     <>
                       <text fg={fadeColor(highlight(), agentMetaAlpha())}>
-                        {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
+                        {store.mode === "shell" ? "Shell" : Locale.titlecase(local.workflow.mode())}
                       </text>
                       <Show when={store.mode === "normal"}>
                         <box flexDirection="row" gap={1}>
@@ -1309,7 +1326,7 @@ export function Prompt(props: PromptProps) {
           />
         </box>
         <box width="100%" flexDirection="row" justifyContent="space-between">
-          <Show when={status().type !== "idle"} fallback={props.hint ?? <text />}>
+          <Show when={status().type !== "idle" || store.isSubmitting} fallback={props.hint ?? <text />}>
             <box
               flexDirection="row"
               gap={1}
@@ -1404,7 +1421,7 @@ export function Prompt(props: PromptProps) {
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
-                        {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>agents</span>
+                        {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>{local.workflow.mode() === "spec" ? "spec" : "vibe"}</span>
                       </text>
                     </Match>
                   </Switch>

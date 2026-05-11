@@ -1,0 +1,52 @@
+# Graphify Knowledge Graph
+
+Graphify is enabled on this project. It turns your codebase, docs, papers, and media into a queryable knowledge graph stored in `graphify-out/`.
+
+## What Graphify Provides
+
+- **Knowledge graph**: Structured representation of your codebase's concepts, relationships, and design rationale
+- **Graph report**: `graphify-out/GRAPH_REPORT.md` — god nodes, communities, surprising connections
+- **Interactive graph**: `graphify-out/graph.html` — visual exploration in any browser
+- **Queryable JSON**: `graphify-out/graph.json` — structured graph data for precise queries
+
+## When to Use Graphify
+
+### Before Deep Exploration
+Before grepping through files to understand architecture, check if a knowledge graph exists:
+1. Read `graphify-out/GRAPH_REPORT.md` for a high-level overview
+2. Use the graph to navigate by structure instead of keyword matching
+
+### For Architecture Questions
+When asked about codebase architecture, dependencies, or design rationale:
+1. Check `graphify-out/GRAPH_REPORT.md` first
+2. If more detail is needed, query the graph directly
+
+### For New Codebases
+When exploring a codebase for the first time:
+1. Suggest running `graphify .` (or `/graphify .`) to build the knowledge graph
+2. This provides 71x+ token reduction for subsequent queries
+
+## Graph Commands
+
+- `graphify .` — Build graph from current directory
+- `graphify ./path --update` — Incremental update (only changed files)
+- `graphify query "question"` — Query the graph
+- `graphify path "NodeA" "NodeB"` — Find shortest path between concepts
+- `graphify explain "ConceptName"` — Plain-language explanation of a node
+
+## MCP Server
+
+If graphify MCP is configured, use structured graph access tools:
+- `query_graph` — Run graph queries
+- `get_node` — Get node details
+- `get_neighbors` — Get connected nodes
+- `shortest_path` — Trace paths between nodes
+
+## Confidence Tags
+
+Every relationship in the graph is tagged:
+- `EXTRACTED` — Found directly in source (confidence: 1.0)
+- `INFERRED` — Reasonable inference (with confidence score 0.0-1.0)
+- `AMBIGUOUS` — Flagged for review
+
+Prefer EXTRACTED edges over INFERRED when making decisions.

@@ -115,7 +115,7 @@ export const layer = Layer.effect(
       const run = yield* runner()
       return {
         cancel: (sessionID: SessionID) => run.fork(cancel(sessionID)),
-        resolvePromptParts: (template: string) => resolvePromptParts(template),
+        resolvePromptParts: (template: string) => resolvePromptParts(template) as Effect.Effect<PromptInput["parts"]>,
         prompt: (input: PromptInput) => prompt(input),
       } satisfies TaskPromptOps
     })
@@ -127,8 +127,22 @@ export const layer = Layer.effect(
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
       const ctx = yield* InstanceState.context
-      const parts: PromptInput["parts"] = [{ type: "text", text: template }]
-      const files = ConfigMarkdown.files(template)
+
+      // Resolve context mentions (@current-errors, @git-diff, etc.) before file resolution
+      let resolvedTemplate = template
+      try {
+        const { Mention } = yield* Effect.promise(() => import("@/mention"))
+        const mentionService = yield* Mention.Service
+        const mentionResult = yield* mentionService.resolveAll(template)
+        if (mentionResult.results.length > 0) {
+          resolvedTemplate = mentionResult.text
+        }
+      } catch {
+        // Mention module not available — skip mention resolution
+      }
+
+      const parts: PromptInput["parts"] = [{ type: "text", text: resolvedTemplate }]
+      const files = ConfigMarkdown.files(resolvedTemplate)
       const seen = new Set<string>()
       yield* Effect.forEach(
         files,
@@ -1263,7 +1277,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       },
     )
 
-    const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
+    const getLastNonUserMessage = Effect.fnUntraced(function* (sessionID: SessionID) {
       const match = yield* sessions.findMessage(sessionID, (m) => m.info.role !== "user")
       if (Option.isSome(match)) return match.value
       const msgs = yield* sessions.messages({ sessionID, limit: 1 })
@@ -1271,7 +1285,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       throw new Error("Impossible")
     })
 
-    const runLoop: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.run")(
+    const runLoop = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         const slog = elog.with({ sessionID })
@@ -1367,7 +1381,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
             throw error
           }
-          const maxSteps = agent.steps ?? Infinity
+          const maxSteps = agent.steps ?? 100
           const isLastStep = step >= maxSteps
           msgs = yield* insertReminders({ messages: msgs, agent, session })
 
@@ -1439,13 +1453,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-            const [skills, env, instructions, modelMsgs] = yield* Effect.all([
+            const [skills, env, instructions, graphifySection, modelMsgs] = yield* Effect.all([
               sys.skills(agent),
               Effect.sync(() => sys.environment(model)),
               instruction.system().pipe(Effect.orDie),
+              sys.graphify().pipe(Effect.orElseSucceed(() => undefined)),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
-            const system = [...env, ...(skills ? [skills] : []), ...instructions]
+            const system = [...env, ...(skills ? [skills] : []), ...(graphifySection ? [graphifySection] : []), ...instructions]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({
@@ -1497,20 +1512,20 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        return yield* lastAssistant(sessionID)
+        return yield* getLastNonUserMessage(sessionID)
       },
     )
 
     const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+      return yield* state.ensureRunning(input.sessionID, getLastNonUserMessage(input.sessionID), runLoop(input.sessionID))
     })
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.shell")(
       function* (input: ShellInput) {
         const ready = yield* Latch.make()
-        return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
+        return yield* state.startShell(input.sessionID, getLastNonUserMessage(input.sessionID), shellImpl(input, ready), ready)
       },
     )
 
@@ -1636,8 +1651,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       prompt,
       loop,
       shell,
-      command,
-      resolvePromptParts,
+      command: command as Interface["command"],
+      resolvePromptParts: resolvePromptParts as Interface["resolvePromptParts"],
     })
   }),
 )
@@ -1691,6 +1706,9 @@ export const PromptInput = Schema.Struct({
   format: Schema.optional(MessageV2.Format),
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  thinkingEffort: Schema.optional(Schema.String).annotate({
+    description: "Thinking effort level for reasoning models (none, minimal, low, medium, high)",
+  }),
   parts: Schema.Array(
     Schema.Union([
       MessageV2.TextPartInput,

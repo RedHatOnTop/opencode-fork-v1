@@ -6,6 +6,8 @@ import { DialogSelect } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
 import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
+import { DialogModelVisibility } from "./dialog-model-visibility"
+import { DialogDisconnectProvider } from "./dialog-disconnect-provider"
 import { useKeybind } from "../context/keybind"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
@@ -112,14 +114,35 @@ export function DialogModel(props: { providerID?: string }) {
         )
       : []
 
+    const actions = []
+    if (connected()) {
+      actions.push({
+        value: { providerID: "__action__", modelID: "visibility" },
+        title: "Toggle model visibility",
+        category: "Actions",
+        onSelect: () => {
+          dialog.replace(() => <DialogModelVisibility />)
+        }
+      })
+      actions.push({
+        value: { providerID: "__action__", modelID: "disconnect" },
+        title: "Disconnect a provider",
+        category: "Actions",
+        onSelect: () => {
+          dialog.replace(() => <DialogDisconnectProvider />)
+        }
+      })
+    }
+
     if (needle) {
       return [
         ...fuzzysort.go(needle, providerOptions, { keys: ["title", "category"] }).map((x) => x.obj),
         ...fuzzysort.go(needle, popularProviders, { keys: ["title"] }).map((x) => x.obj),
+        ...actions.filter(x => x.title.toLowerCase().includes(needle.toLowerCase()))
       ]
     }
 
-    return [...favoriteOptions, ...recentOptions, ...providerOptions, ...popularProviders]
+    return [...favoriteOptions, ...recentOptions, ...providerOptions, ...popularProviders, ...actions]
   })
 
   const provider = createMemo(() =>

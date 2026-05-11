@@ -12,6 +12,7 @@ import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
 import { Plugin } from "@/plugin"
 import { SystemPrompt } from "./system"
+import * as SystemPromptLog from "./system-prompt-log"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
@@ -23,7 +24,6 @@ import { Installation } from "@/installation"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { EffectBridge } from "@/effect/bridge"
 import * as Option from "effect/Option"
-import * as OtelTracer from "@effect/opentelemetry/Tracer"
 
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
@@ -42,6 +42,7 @@ export type StreamInput = {
   tools: Record<string, Tool>
   retries?: number
   toolChoice?: "auto" | "required" | "none"
+  thinkingEffort?: string
 }
 
 export type StreamRequest = StreamInput & {
@@ -123,6 +124,16 @@ const live: Layer.Layer<
         system.push(header, rest.join("\n"))
       }
 
+      SystemPromptLog.set(input.sessionID, {
+        parts: system.map((content, i) => ({
+          label: i === 0 ? "Base prompt" : i === 1 ? "Context & instructions" : `Part ${i + 1}`,
+          content,
+        })),
+        model: { id: input.model.id, providerID: input.model.providerID },
+        agent: input.agent.name,
+        timestamp: Date.now(),
+      })
+
       const variant =
         !input.small && input.model.variants && input.user.model.variant
           ? input.model.variants[input.user.model.variant]
@@ -134,11 +145,15 @@ const live: Layer.Layer<
             sessionID: input.sessionID,
             providerOptions: item.options,
           })
+      const thinkingEffortOptions = input.thinkingEffort
+        ? ProviderTransform.thinkingEffortOptions(input.model, input.thinkingEffort)
+        : {}
       const options: Record<string, any> = pipe(
         base,
         mergeDeep(input.model.options),
         mergeDeep(input.agent.options),
         mergeDeep(variant),
+        mergeDeep(thinkingEffortOptions),
       )
       if (isOpenaiOauth) {
         options.instructions = system.join("\n")
@@ -194,6 +209,188 @@ const live: Layer.Layer<
       )
 
       const tools = resolveTools(input)
+
+      // Tool Calling Fallback Check
+      // Only applies when model.capabilities.toolcall === false
+      // Native tool calling models use the standard streamText path below
+      const useFallback = input.model.capabilities.toolcall === false
+
+      if (useFallback) {
+        l.info("Using fallback tool calling", {
+          modelID: input.model.id,
+          reason: "Native tool calling not supported",
+        })
+
+        // Dynamically import fallback service (lazy loading for zero overhead on native path)
+        const { ToolCallFallbackService } = yield* Effect.tryPromise(() =>
+          import("./tool-fallback").then((m) => ({ ToolCallFallbackService: m.ToolCallFallbackService }))
+        )
+
+        const fallbackService = new ToolCallFallbackService(
+          input.model,
+          tools,
+          { strategy: "auto", maxIterations: 5 }
+        )
+
+        // Create wrapper for streamText that matches fallback interface
+        const streamTextWrapper = async (msgs: ModelMessage[], toolParams?: any) => {
+          return streamText({
+            temperature: params.temperature,
+            topP: params.topP,
+            topK: params.topK,
+            providerOptions: ProviderTransform.providerOptions(input.model, params.options),
+            maxOutputTokens: params.maxOutputTokens,
+            abortSignal: input.abort,
+            headers: {
+              ...(input.model.providerID.startsWith("opencode")
+                ? {
+                    "x-opencode-project": Instance.project.id,
+                    "x-opencode-session": input.sessionID,
+                    "x-opencode-request": input.user.id,
+                    "x-opencode-client": Flag.OPENCODE_CLIENT,
+                    "User-Agent": `opencode/${InstallationVersion}`,
+                  }
+                : {
+                    "x-session-affinity": input.sessionID,
+                    ...(input.parentSessionID ? { "x-parent-session-id": input.parentSessionID } : {}),
+                    "User-Agent": `opencode/${InstallationVersion}`,
+                  }),
+              ...input.model.headers,
+              ...headers,
+            },
+            maxRetries: input.retries ?? 0,
+            messages: msgs,
+            model: wrapLanguageModel({
+              model: language,
+              middleware: [
+                {
+                  specificationVersion: "v3" as const,
+                  async transformParams(args) {
+                    if (args.type === "stream") {
+                      // @ts-expect-error
+                      args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
+                    }
+                    return args.params
+                  },
+                },
+              ],
+            }),
+          })
+        }
+
+        // Execute fallback tool calling
+        const fallbackStream = yield* Effect.tryPromise({
+          try: async () => {
+            const events: any[] = []
+            const stream = fallbackService.executeWithFallback(
+              [...messages],
+              {
+                stream: async (msgs: ModelMessage[]) => {
+                  const result = await streamTextWrapper(msgs)
+                  // Collect all events from the stream
+                  const allEvents: any[] = []
+                  for await (const event of result.fullStream) {
+                    allEvents.push(event)
+                    if (event.type === "text-delta") {
+                      events.push({ type: "text-delta", textDelta: event.text })
+                    } else if (event.type === "tool-call") {
+                      events.push({
+                        type: "tool-call",
+                        toolCallId: event.toolCallId,
+                        toolName: event.toolName,
+                        args: event.input,
+                      })
+                    } else if (event.type === "tool-result") {
+                      events.push({
+                        type: "tool-result",
+                        toolCallId: event.toolCallId,
+                        result: event.output,
+                      })
+                    }
+                  }
+                  // Return the collected content
+                  const textEvents = allEvents.filter(e => e.type === "text-delta")
+                  const content = textEvents.map(e => e.textDelta).join("")
+                  return { content, fullResponse: result }
+                },
+              }
+            )
+
+            // Collect all fallback events
+            const fallbackEvents: any[] = []
+            for await (const event of stream) {
+              fallbackEvents.push(event)
+            }
+
+            return { fallbackEvents, nativeEvents: events }
+          },
+          catch: (error) => {
+            l.error("Fallback execution failed", { error })
+            return { fallbackEvents: [{ type: "error" as const, error: String(error) } as any], nativeEvents: [] }
+          },
+        })
+
+        // Create a result object that matches the expected return type
+        const textParts = fallbackStream.fallbackEvents
+          .filter((e: any) => e.type === "text-delta")
+          .map((e: any) => e.textDelta)
+          .join("")
+
+        const toolCalls = fallbackStream.fallbackEvents
+          .filter((e: any) => e.type === "tool-call")
+          .map((e: any) => ({
+            toolCallId: e.toolCallId,
+            toolName: e.toolName,
+            args: e.args,
+          }))
+
+        const toolResults = fallbackStream.fallbackEvents
+          .filter((e: any) => e.type === "tool-result")
+          .map((e: any) => ({
+            toolCallId: e.toolCallId,
+            result: e.result,
+          }))
+
+        // Build fullStream from fallback events
+        const fullStream = (async function* () {
+          for (const event of fallbackStream.fallbackEvents) {
+            if (event.type === "text-delta") {
+              yield event
+            } else if (event.type === "tool-call") {
+              yield {
+                type: "tool-call" as const,
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                args: event.args,
+              }
+            } else if (event.type === "tool-result") {
+              yield {
+                type: "tool-result" as const,
+                toolCallId: event.toolCallId,
+                result: event.result,
+              }
+            }
+          }
+        })()
+
+        return {
+          text: Promise.resolve(textParts),
+          toolCalls: Promise.resolve(toolCalls),
+          toolResults: Promise.resolve(toolResults),
+          finishReason: Promise.resolve("stop" as const),
+          usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
+          warnings: Promise.resolve([]),
+          request: Promise.resolve({}),
+          response: Promise.resolve({
+            id: "fallback",
+            modelId: input.model.id,
+            timestamp: new Date(),
+          }),
+          fullStream,
+          experimentalOutput: Promise.resolve(undefined),
+          experimentalMessages: Promise.resolve({ messages: [] }),
+        } as unknown as Result
+      }
 
       // LiteLLM and some Anthropic proxies require the tools parameter to be present
       // when message history contains tool calls, even if no tools are being used.
@@ -314,21 +511,7 @@ const live: Layer.Layer<
         })
       }
 
-      const tracer = cfg.experimental?.openTelemetry
-        ? Option.getOrUndefined(yield* Effect.serviceOption(OtelTracer.OtelTracer))
-        : undefined
-      const telemetryTracer = tracer
-        ? new Proxy(tracer, {
-            get(target, prop, receiver) {
-              if (prop !== "startSpan") return Reflect.get(target, prop, receiver)
-              return (...args: Parameters<typeof target.startSpan>) => {
-                const span = target.startSpan(...args)
-                span.setAttribute("session.id", input.sessionID)
-                return span
-              }
-            },
-          })
-        : undefined
+      // Telemetry removed in this fork
 
       return streamText({
         onError(error) {
@@ -400,15 +583,7 @@ const live: Layer.Layer<
             },
           ],
         }),
-        experimental_telemetry: {
-          isEnabled: cfg.experimental?.openTelemetry,
-          functionId: "session.llm",
-          tracer: telemetryTracer,
-          metadata: {
-            userId: cfg.username ?? "unknown",
-            sessionId: input.sessionID,
-          },
-        },
+        // experimental_telemetry removed in this fork
       })
     })
 

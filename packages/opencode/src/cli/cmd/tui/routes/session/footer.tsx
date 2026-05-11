@@ -51,7 +51,9 @@ export function Footer() {
 
   return (
     <box flexDirection="row" justifyContent="space-between" gap={1} flexShrink={0}>
-      <text fg={theme.textMuted}>{directory()}</text>
+      <box gap={1} flexDirection="row" flexShrink={0}>
+        <text fg={theme.textMuted}>{directory()}</text>
+      </box>
       <box gap={2} flexDirection="row" flexShrink={0}>
         <Switch>
           <Match when={store.welcome}>
