@@ -191,6 +191,13 @@ export const dict = {
   "provider.custom.error.baseURL.format": "Debe comenzar con http:// o https://",
   "provider.custom.error.required": "Obligatorio",
   "provider.custom.error.duplicate": "Duplicado",
+  "provider.custom.error.fetch": "Failed to fetch models",
+  "provider.custom.models.fetch": "Fetch models",
+  "provider.custom.models.fetching": "Fetching...",
+  "provider.custom.models.search": "Search models...",
+  "provider.custom.models.toggleAll": "Toggle all",
+  "provider.custom.models.selected": "{{count}} of {{total}} selected",
+  "provider.custom.models.noModelsFound": "No models found at this endpoint",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} desconectado",
   "provider.disconnect.toast.disconnected.description": "Los modelos de {{provider}} ya no están disponibles.",

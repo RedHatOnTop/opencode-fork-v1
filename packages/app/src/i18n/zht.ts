@@ -192,6 +192,13 @@ export const dict = {
   "provider.custom.error.baseURL.format": "必須以 http:// 或 https:// 開頭",
   "provider.custom.error.required": "必填",
   "provider.custom.error.duplicate": "重複",
+  "provider.custom.error.fetch": "Failed to fetch models",
+  "provider.custom.models.fetch": "Fetch models",
+  "provider.custom.models.fetching": "Fetching...",
+  "provider.custom.models.search": "Search models...",
+  "provider.custom.models.toggleAll": "Toggle all",
+  "provider.custom.models.selected": "{{count}} of {{total}} selected",
+  "provider.custom.models.noModelsFound": "No models found at this endpoint",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} 已中斷連線",
   "provider.disconnect.toast.disconnected.description": "{{provider}} 模型已不再可用。",

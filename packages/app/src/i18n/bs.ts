@@ -192,6 +192,13 @@ export const dict = {
   "provider.custom.error.baseURL.format": "Mora početi sa http:// ili https://",
   "provider.custom.error.required": "Obavezno",
   "provider.custom.error.duplicate": "Duplikat",
+  "provider.custom.error.fetch": "Failed to fetch models",
+  "provider.custom.models.fetch": "Fetch models",
+  "provider.custom.models.fetching": "Fetching...",
+  "provider.custom.models.search": "Search models...",
+  "provider.custom.models.toggleAll": "Toggle all",
+  "provider.custom.models.selected": "{{count}} of {{total}} selected",
+  "provider.custom.models.noModelsFound": "No models found at this endpoint",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} odspojen",
   "provider.disconnect.toast.disconnected.description": "{{provider}} modeli više nisu dostupni.",
