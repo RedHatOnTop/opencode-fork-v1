@@ -572,6 +572,7 @@ export type UserMessage = {
     providerID: string
     modelID: string
     variant?: string
+    thinkingEffort?: string
   }
   system?: string
   tools?: {
@@ -1500,6 +1501,18 @@ export type Config = {
      * URLs to fetch skills from (e.g., https://example.com/.well-known/skills/)
      */
     urls?: Array<string>
+    /**
+     * Maximum tokens for on-demand loaded skills (default: 4000)
+     */
+    max_loaded_tokens?: number
+    /**
+     * BM25 score boost multiplier for CORE tier skills (default: 1.5)
+     */
+    core_boost?: number
+    /**
+     * Default number of search results (default: 10)
+     */
+    search_limit?: number
   }
   watcher?: {
     ignore?: Array<string>
@@ -1508,6 +1521,14 @@ export type Config = {
    * Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.
    */
   snapshot?: boolean
+  /**
+   * Shell commands that are automatically allowed in Default mode
+   */
+  shell_allowlist?: Array<string>
+  /**
+   * Shell commands that are always denied
+   */
+  shell_denylist?: Array<string>
   plugin?: Array<
     | string
     | [
@@ -1694,6 +1715,61 @@ export type Config = {
      * Timeout in milliseconds for model context protocol (MCP) requests
      */
     mcp_timeout?: number
+  }
+  verify?: {
+    /**
+     * Verification commands to run after code changes (default: ['bun typecheck', 'bun test'])
+     */
+    commands?: Array<string>
+    /**
+     * Enable automatic fix attempts on verification failure (default: true)
+     */
+    auto_fix?: boolean
+    /**
+     * Maximum number of automatic fix attempts (default: 3)
+     */
+    max_retries?: number
+  }
+  /**
+   * Approval mode for tool execution (default: 'default')
+   */
+  approval_mode?: "strict"
+  blocked_commands?: {
+    /**
+     * Additional destructive command patterns to block
+     */
+    destructive?: Array<string>
+    /**
+     * Additional network command patterns to block in Autopilot mode
+     */
+    network?: Array<string>
+    /**
+     * Additional system installation command patterns to block in Autopilot mode
+     */
+    system_install?: Array<string>
+  }
+  notification?: {
+    /**
+     * Enable or disable OS-level notifications (default: true)
+     */
+    enabled?: boolean
+  }
+  /**
+   * Graphify knowledge graph feature. Turn any folder of code, docs, papers, images, or videos into a queryable knowledge graph.
+   */
+  graphify?: {
+    /**
+     * Enable Graphify knowledge graph integration (default: false). Can also be enabled via OPENCODE_ENABLE_GRAPHIFY=1
+     */
+    enabled?: boolean
+    /**
+     * Automatically query the knowledge graph before answering architecture questions (default: true)
+     */
+    auto_query?: boolean
+    /**
+     * Custom path to graph.json relative to project root (default: graphify-out/graph.json)
+     */
+    graph_path?: string
   }
 }
 
@@ -3348,6 +3424,40 @@ export type SessionCreateResponses = {
 
 export type SessionCreateResponse = SessionCreateResponses[keyof SessionCreateResponses]
 
+export type SessionGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}"
+}
+
+export type SessionGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionGetError = SessionGetErrors[keyof SessionGetErrors]
+
+export type SessionGetResponses = {
+  /**
+   * Get session
+   */
+  200: Session
+}
+
+export type SessionGetResponse = SessionGetResponses[keyof SessionGetResponses]
+
 export type SessionStatusData = {
   body?: never
   path?: never
@@ -3377,6 +3487,38 @@ export type SessionStatusResponses = {
 }
 
 export type SessionStatusResponse = SessionStatusResponses[keyof SessionStatusResponses]
+
+export type SessionSystemPromptData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/system-prompt"
+}
+
+export type SessionSystemPromptErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * No system prompt recorded yet
+   */
+  404: unknown
+}
+
+export type SessionSystemPromptError = SessionSystemPromptErrors[keyof SessionSystemPromptErrors]
+
+export type SessionSystemPromptResponses = {
+  /**
+   * System prompt data
+   */
+  200: unknown
+}
 
 export type SessionDeleteData = {
   body?: never
@@ -3411,40 +3553,6 @@ export type SessionDeleteResponses = {
 }
 
 export type SessionDeleteResponse = SessionDeleteResponses[keyof SessionDeleteResponses]
-
-export type SessionGetData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}"
-}
-
-export type SessionGetErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type SessionGetError = SessionGetErrors[keyof SessionGetErrors]
-
-export type SessionGetResponses = {
-  /**
-   * Get session
-   */
-  200: Session
-}
-
-export type SessionGetResponse = SessionGetResponses[keyof SessionGetResponses]
 
 export type SessionUpdateData = {
   body?: {
@@ -3485,74 +3593,6 @@ export type SessionUpdateResponses = {
 }
 
 export type SessionUpdateResponse = SessionUpdateResponses[keyof SessionUpdateResponses]
-
-export type SessionChildrenData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/children"
-}
-
-export type SessionChildrenErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type SessionChildrenError = SessionChildrenErrors[keyof SessionChildrenErrors]
-
-export type SessionChildrenResponses = {
-  /**
-   * List of children
-   */
-  200: Array<Session>
-}
-
-export type SessionChildrenResponse = SessionChildrenResponses[keyof SessionChildrenResponses]
-
-export type SessionTodoData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/todo"
-}
-
-export type SessionTodoErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type SessionTodoError = SessionTodoErrors[keyof SessionTodoErrors]
-
-export type SessionTodoResponses = {
-  /**
-   * Todo list
-   */
-  200: Array<Todo>
-}
-
-export type SessionTodoResponse = SessionTodoResponses[keyof SessionTodoResponses]
 
 export type SessionInitData = {
   body?: {
@@ -3717,6 +3757,27 @@ export type SessionShareResponses = {
 
 export type SessionShareResponse = SessionShareResponses[keyof SessionShareResponses]
 
+export type SessionTodoData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/todo"
+}
+
+export type SessionTodoResponses = {
+  /**
+   * Successfully retrieved todos
+   */
+  200: Array<Todo>
+}
+
+export type SessionTodoResponse = SessionTodoResponses[keyof SessionTodoResponses]
+
 export type SessionDiffData = {
   body?: never
   path: {
@@ -3837,6 +3898,10 @@ export type SessionPromptData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    /**
+     * Thinking effort level for reasoning models (none, minimal, low, medium, high)
+     */
+    thinkingEffort?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -4037,6 +4102,10 @@ export type SessionPromptAsyncData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    /**
+     * Thinking effort level for reasoning models (none, minimal, low, medium, high)
+     */
+    thinkingEffort?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {

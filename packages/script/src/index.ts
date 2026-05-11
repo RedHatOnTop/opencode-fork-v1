@@ -31,9 +31,9 @@ const CHANNEL = await (async () => {
 })()
 const IS_PREVIEW = CHANNEL !== "latest"
 
-const VERSION = await (async () => {
-  if (env.OPENCODE_VERSION) return env.OPENCODE_VERSION
-  if (IS_PREVIEW) return `0.0.0-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
+const BASE_VERSION = await (async () => {
+  if (env.OPENCODE_VERSION && !env.OPENCODE_VERSION.includes("modded"))
+    return env.OPENCODE_VERSION.replace(/-modded.*$/, "")
   const version = await fetch("https://registry.npmjs.org/opencode-ai/latest")
     .then((res) => {
       if (!res.ok) throw new Error(res.statusText)
@@ -45,6 +45,15 @@ const VERSION = await (async () => {
   if (t === "major") return `${major + 1}.0.0`
   if (t === "minor") return `${major}.${minor + 1}.0`
   return `${major}.${minor}.${patch + 1}`
+})()
+
+const VERSION_SUFFIX = "modded"
+
+const VERSION = await (async () => {
+  if (env.OPENCODE_VERSION) return env.OPENCODE_VERSION
+  if (IS_PREVIEW)
+    return `${BASE_VERSION}-${VERSION_SUFFIX}.${CHANNEL}.${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
+  return `${BASE_VERSION}-${VERSION_SUFFIX}`
 })()
 
 const bot = ["actions-user", "opencode", "opencode-agent[bot]"]
@@ -63,6 +72,9 @@ export const Script = {
   },
   get version() {
     return VERSION
+  },
+  get baseVersion() {
+    return BASE_VERSION
   },
   get preview() {
     return IS_PREVIEW

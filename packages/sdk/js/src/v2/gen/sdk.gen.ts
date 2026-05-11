@@ -116,20 +116,19 @@ import type {
   QuestionReplyResponses,
   SessionAbortErrors,
   SessionAbortResponses,
-  SessionChildrenErrors,
-  SessionChildrenResponses,
   SessionCommandErrors,
   SessionCommandResponses,
   SessionCreateErrors,
   SessionCreateResponses,
   SessionDeleteErrors,
+  SessionGetErrors,
+  SessionGetResponses,
   SessionDeleteMessageErrors,
   SessionDeleteMessageResponses,
   SessionDeleteResponses,
   SessionDiffResponses,
   SessionForkResponses,
-  SessionGetErrors,
-  SessionGetResponses,
+  SessionTodoResponses,
   SessionInitErrors,
   SessionInitResponses,
   SessionListResponses,
@@ -151,8 +150,8 @@ import type {
   SessionStatusResponses,
   SessionSummarizeErrors,
   SessionSummarizeResponses,
-  SessionTodoErrors,
-  SessionTodoResponses,
+  SessionSystemPromptErrors,
+  SessionSystemPromptResponses,
   SessionUnrevertErrors,
   SessionUnrevertResponses,
   SessionUnshareErrors,
@@ -1720,6 +1719,38 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
+   * Get session
+   *
+   * Retrieve detailed information about a specific OpenCode session.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionGetResponses, SessionGetErrors, ThrowOnError>({
+      url: "/session/{sessionID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get session status
    *
    * Retrieve the current status of all sessions, including active, idle, and completed states.
@@ -1744,6 +1775,38 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<SessionStatusResponses, SessionStatusErrors, ThrowOnError>({
       url: "/session/status",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get system prompt
+   *
+   * Retrieve the last system prompt that was sent to the LLM for this session, for transparency.
+   */
+  public systemPrompt<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionSystemPromptResponses, SessionSystemPromptErrors, ThrowOnError>({
+      url: "/session/{sessionID}/system-prompt",
       ...options,
       ...params,
     })
@@ -1775,38 +1838,6 @@ export class Session2 extends HeyApiClient {
       ],
     )
     return (options?.client ?? this.client).delete<SessionDeleteResponses, SessionDeleteErrors, ThrowOnError>({
-      url: "/session/{sessionID}",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get session
-   *
-   * Retrieve detailed information about a specific OpenCode session.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionGetResponses, SessionGetErrors, ThrowOnError>({
       url: "/session/{sessionID}",
       ...options,
       ...params,
@@ -1855,70 +1886,6 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
-    })
-  }
-
-  /**
-   * Get session children
-   *
-   * Retrieve all child sessions that were forked from the specified parent session.
-   */
-  public children<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionChildrenResponses, SessionChildrenErrors, ThrowOnError>({
-      url: "/session/{sessionID}/children",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get session todos
-   *
-   * Retrieve the todo list associated with a specific session, showing tasks and action items.
-   */
-  public todo<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionTodoResponses, SessionTodoErrors, ThrowOnError>({
-      url: "/session/{sessionID}/todo",
-      ...options,
-      ...params,
     })
   }
 
@@ -2101,6 +2068,38 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
+   * Get session todos
+   *
+   * Retrieve the todo list associated with a specific session, showing tasks and action items.
+   */
+  public todo<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionTodoResponses, unknown, ThrowOnError>({
+      url: "/session/{sessionID}/todo",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get message diff
    *
    * Get the file changes (diff) that resulted from a specific user message in the session.
@@ -2236,6 +2235,7 @@ export class Session2 extends HeyApiClient {
       format?: OutputFormat
       system?: string
       variant?: string
+      thinkingEffort?: string
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -2256,6 +2256,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "format" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
+            { in: "body", key: "thinkingEffort" },
             { in: "body", key: "parts" },
           ],
         },
@@ -2368,6 +2369,7 @@ export class Session2 extends HeyApiClient {
       format?: OutputFormat
       system?: string
       variant?: string
+      thinkingEffort?: string
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -2388,6 +2390,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "format" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
+            { in: "body", key: "thinkingEffort" },
             { in: "body", key: "parts" },
           ],
         },
