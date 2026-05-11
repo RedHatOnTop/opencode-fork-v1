@@ -125,7 +125,7 @@ export const create = fn(CreateInput.zod, async (input) => {
   }
   await adaptor.create(config, env)
 
-  startSync(info)
+  void startSync(info)
 
   await waitEvent({
     timeout: TIMEOUT,

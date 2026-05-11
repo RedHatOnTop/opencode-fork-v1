@@ -13,12 +13,14 @@ import { withStatics } from "@/util/schema"
 import { Wildcard } from "@/util/wildcard"
 import { Deferred, Effect, Layer, Schema, Context } from "effect"
 import os from "os"
-import { evaluate as evalRule } from "./evaluate"
+import { evaluateWithMode, evaluate as evalRule } from "./evaluate"
 import { PermissionID } from "./schema"
+import { ApprovalMode, Service as ApprovalModeService } from "./approval-mode"
+import { ActionQueue } from "./action-queue"
 
 const log = Log.create({ service: "permission" })
 
-export const Action = Schema.Literals(["allow", "deny", "ask"])
+export const Action = Schema.Literals(["allow", "deny", "ask", "queue"])
   .annotate({ identifier: "PermissionAction" })
   .pipe(withStatics((s) => ({ zod: zod(s) })))
 export type Action = Schema.Schema.Type<typeof Action>
@@ -108,7 +110,13 @@ export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("Permiss
   }
 }
 
-export type Error = DeniedError | RejectedError | CorrectedError
+export class QueuedError extends Schema.TaggedErrorClass<QueuedError>()("PermissionQueuedError", {}) {
+  override get message() {
+    return "This action requires user approval and has been added to the Action Queue."
+  }
+}
+
+export type Error = DeniedError | RejectedError | CorrectedError | QueuedError
 
 export const AskInput = Schema.Struct({
   ...Request.fields,
@@ -154,6 +162,8 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const bus = yield* Bus.Service
+    const approvalMode = yield* Effect.serviceOption(ApprovalModeService)
+    const actionQueue = yield* Effect.serviceOption(ActionQueue.Service)
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
         const row = Database.use((db) =>
@@ -181,14 +191,27 @@ export const layer = Layer.effect(
       const { approved, pending } = yield* InstanceState.get(state)
       const { ruleset, ...request } = input
       let needsAsk = false
+      
+      const mode = approvalMode._tag === "Some" ? yield* approvalMode.value.getMode() : "default"
 
       for (const pattern of request.patterns) {
-        const rule = evaluate(request.permission, pattern, ruleset, approved)
+        const rule = evaluateWithMode(request.permission, pattern, mode, ruleset, approved)
         log.info("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
           return yield* new DeniedError({
             ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
           })
+        }
+        if (rule.action === "queue") {
+          if (actionQueue._tag === "Some") {
+            yield* actionQueue.value.add({
+              sessionId: request.sessionID,
+              reason: `Permission ${request.permission} for ${pattern}`,
+              command: pattern,
+              context: `Tool Call: ${request.tool?.callID || "Unknown"}`
+            })
+          }
+          return yield* new QueuedError()
         }
         if (rule.action === "allow") continue
         needsAsk = true

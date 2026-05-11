@@ -33,7 +33,7 @@ function generate(schema: z.ZodType) {
           schema.examples = [schema.default]
         }
 
-        schema.description = [schema.description || "", `default: \`${String(schema.default)}\``]
+        schema.description = [schema.description || "", `default: \`${typeof schema.default === "string" ? schema.default : JSON.stringify(schema.default)}\``]
           .filter(Boolean)
           .join("\n\n")
           .trim()

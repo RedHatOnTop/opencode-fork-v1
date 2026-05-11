@@ -79,6 +79,12 @@ function message(providerID: ProviderID, e: APICallError) {
       if (e.statusCode === 403) {
         return "Forbidden: request was blocked by a gateway or proxy. You may not have permission to access this resource — check your account and provider settings."
       }
+      if (e.statusCode === 502) {
+        return "Bad Gateway: the proxy or upstream server returned an invalid response. If you are using a local proxy (e.g. Clash, V2Ray), check that it is running and can reach the target API endpoint."
+      }
+      if (e.statusCode === 504) {
+        return "Gateway Timeout: the proxy or upstream server did not respond in time. Check your network, proxy, or VPN configuration."
+      }
       return msg
     }
 

@@ -132,7 +132,7 @@ export const ModeCommand = cmd({
           const marker = isCurrent ? UI.Style.TEXT_SUCCESS + "● " + UI.Style.TEXT_NORMAL : "  "
           const name = isCurrent
             ? UI.Style.TEXT_SUCCESS_BOLD + mode + UI.Style.TEXT_NORMAL
-            : UI.Style.TEXT_BOLD + mode + UI.Style.TEXT_NORMAL
+            : UI.Style.TEXT_NORMAL_BOLD + mode + UI.Style.TEXT_NORMAL
 
           UI.println(`${marker}${name}`)
           UI.println(`    ${formatModeDescription(mode)}`)
@@ -152,7 +152,7 @@ export const ModeCommand = cmd({
       // Show current mode
       if (args.show || !args.mode) {
         const currentMode = await getCurrentMode()
-        UI.println(UI.Style.TEXT_INFO + "Current approval mode: " + UI.Style.TEXT_NORMAL + UI.Style.TEXT_BOLD + currentMode + UI.Style.TEXT_NORMAL)
+        UI.println(UI.Style.TEXT_INFO + "Current approval mode: " + UI.Style.TEXT_NORMAL + UI.Style.TEXT_NORMAL_BOLD + currentMode + UI.Style.TEXT_NORMAL)
         UI.println("")
         UI.println(formatModeDescription(currentMode))
         UI.println("")

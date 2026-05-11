@@ -37,11 +37,23 @@ export const SearchSkillsTool = Tool.define(
               : undefined
             : undefined
 
-          const results = yield* registry.search(params.query, {
-            limit: params.limit ?? 10,
-            tierFilter,
-            categoryFilter: params.category,
-          })
+          // Check if agent context is available
+          const agentType = ctx.agent
+          
+          let results
+          if (agentType) {
+            // Use agent-scoped search when agent context is present
+            results = yield* registry.searchForAgent(agentType, params.query, {
+              limit: params.limit ?? 10,
+            })
+          } else {
+            // Use default search without agent filtering
+            results = yield* registry.search(params.query, {
+              limit: params.limit ?? 10,
+              tierFilter,
+              categoryFilter: params.category,
+            })
+          }
 
           if (results.length === 0) {
             // Suggest categories when no results found
@@ -54,18 +66,20 @@ export const SearchSkillsTool = Tool.define(
               title: `No results for: ${params.query}`,
               output: [
                 `No skills found matching "${params.query}".`,
+                agentType ? ` (filtered for ${agentType} agent)` : "",
                 "",
                 "Try browsing these categories:",
                 ...categorySuggestions,
                 "",
                 "Or try different keywords in your search.",
               ].join("\n"),
-              metadata: { resultCount: 0 },
+              metadata: { resultCount: 0, agentType, query: params.query },
             }
           }
 
           const lines: string[] = [
             `Found ${results.length} skill${results.length === 1 ? "" : "s"} matching "${params.query}":`,
+            agentType ? ` (filtered for ${agentType} agent)` : "",
             "",
           ]
 
@@ -87,6 +101,7 @@ export const SearchSkillsTool = Tool.define(
             metadata: {
               resultCount: results.length,
               query: params.query,
+              agentType,
             },
           }
         }).pipe(Effect.orDie),

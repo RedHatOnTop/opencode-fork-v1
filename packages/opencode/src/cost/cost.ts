@@ -59,9 +59,9 @@ export interface CostLimits {
  * Cost Tracker Service Interface
  */
 export interface Interface {
-  readonly record: (entry: Omit<CostEntry, "id" | "timestamp" | "totalCost">) => Effect.Effect<CostEntry>
+  readonly record: (entry: Omit<CostEntry, "id" | "timestamp" | "totalCost" | "inputCost" | "outputCost">) => Effect.Effect<CostEntry>
   readonly getSessionCosts: (sessionId: string) => Effect.Effect<AggregatedCosts>
-  readonly getTotalCosts: Effect.Effect<AggregatedCosts>
+  readonly getTotalCosts: () => Effect.Effect<AggregatedCosts>
   readonly getCostsByProvider: (providerId: string) => Effect.Effect<AggregatedCosts>
   readonly getCostsByModel: (providerId: string, modelId: string) => Effect.Effect<AggregatedCosts>
   readonly resetSession: (sessionId: string) => Effect.Effect<void>
@@ -72,7 +72,7 @@ export interface Interface {
     currentSessionCost: number
     currentDailyCost: number
   }>
-  readonly getCostStatusForTUI: Effect.Effect<{
+  readonly getCostStatusForTUI: () => Effect.Effect<{
     totalCost: number
     sessionCost: number
     isWarning: boolean
@@ -189,7 +189,7 @@ export const layer = Layer.effect(
     }
 
     const record = Effect.fn("CostTracker.record")(
-      function* (entry: Omit<CostEntry, "id" | "timestamp" | "totalCost">) {
+      function* (entry: Omit<CostEntry, "id" | "timestamp" | "totalCost" | "inputCost" | "outputCost">) {
         checkDailyReset()
 
         const { inputCost, outputCost, totalCost } = calculateCost(
@@ -308,7 +308,7 @@ export const layer = Layer.effect(
       const currentSessionId = "current-session" // This would come from actual session context
 
       const sessionCosts = yield* getSessionCosts(currentSessionId)
-      const totalCosts = yield* getTotalCosts
+      const totalCosts = yield* getTotalCosts()
 
       // Default limits (would come from config in production)
       const warningThreshold = 0.8
@@ -351,7 +351,7 @@ export function recordMessageCost(
   outputTokens: number,
   cacheReadTokens: number = 0,
   cacheWriteTokens: number = 0
-): Effect.Effect<CostEntry> {
+): Effect.Effect<CostEntry, never, Service> {
   return Effect.gen(function* () {
     const service = yield* Service
     return yield* service.record({

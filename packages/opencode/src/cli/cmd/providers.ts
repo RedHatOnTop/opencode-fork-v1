@@ -215,8 +215,137 @@ export const ProvidersCommand = cmd({
   aliases: ["auth"],
   describe: "manage AI providers and credentials",
   builder: (yargs) =>
-    yargs.command(ProvidersListCommand).command(ProvidersLoginCommand).command(ProvidersLogoutCommand).demandCommand(),
+    yargs
+      .command(ProvidersListCommand)
+      .command(ProvidersLoginCommand)
+      .command(ProvidersLogoutCommand)
+      .command(ProvidersAddCustomCommand)
+      .demandCommand(),
   async handler() {},
+})
+
+export const ProvidersAddCustomCommand = cmd({
+  command: "add-custom",
+  describe: "easily add a custom provider via endpoint URL with model discovery",
+  async handler(_args) {
+    UI.empty()
+    prompts.intro("Add Custom Provider")
+
+    const url = await prompts.text({
+      message: "Enter the provider endpoint URL (e.g. http://localhost:11434/v1)",
+      placeholder: "https://api.openai.com/v1",
+      validate: (x) => {
+        if (!x || x.trim().length === 0) return "Required"
+        try {
+          new URL(x)
+        } catch {
+          return "Invalid URL"
+        }
+        return undefined
+      },
+    })
+    if (prompts.isCancel(url)) throw new UI.CancelledError()
+
+    const key = await prompts.password({
+      message: "Enter the API key",
+      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+    })
+    if (prompts.isCancel(key)) throw new UI.CancelledError()
+
+    const providerNameRaw = await prompts.text({
+      message: "Enter a name for this custom provider (e.g. custom-local)",
+      placeholder: "my-custom-provider",
+      validate: (x) => (x && x.match(/^[a-z0-9-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
+    })
+    if (prompts.isCancel(providerNameRaw)) throw new UI.CancelledError()
+    const providerName = providerNameRaw.toLowerCase()
+
+    const spinner = prompts.spinner()
+    spinner.start("Scanning models from /models ...")
+
+    let modelsData: any
+    try {
+      const endpoint = url.endsWith("/") ? url.slice(0, -1) : url
+      const res = await fetch(`${endpoint}/models`, {
+        headers: {
+          Authorization: `Bearer ${key}`,
+        },
+      })
+      if (!res.ok) {
+        throw new Error(`HTTP Error ${res.status}: ${res.statusText}`)
+      }
+      modelsData = await res.json()
+    } catch (e: any) {
+      spinner.stop("Failed to scan models")
+      prompts.log.error(e.message ?? String(e))
+      return
+    }
+
+    spinner.stop("Models scanned successfully")
+
+    const availableModels: string[] = []
+    if (modelsData?.data && Array.isArray(modelsData.data)) {
+      availableModels.push(...modelsData.data.map((m: any) => m.id))
+    } else if (Array.isArray(modelsData)) {
+      availableModels.push(...modelsData.map((m: any) => m.id ?? m.name ?? String(m)))
+    } else if (modelsData?.object === "list" && Array.isArray(modelsData.data)) {
+      availableModels.push(...modelsData.data.map((m: any) => m.id))
+    }
+
+    if (availableModels.length === 0) {
+      prompts.log.error("No models found. Check the endpoint URL and ensure it returns a /v1/models compatible response.")
+      return
+    }
+
+    const selectedModels = await prompts.multiselect({
+      message: "Select models to add (use spacebar to toggle)",
+      options: availableModels.map((m) => ({ label: m, value: m })),
+    })
+    if (prompts.isCancel(selectedModels)) throw new UI.CancelledError()
+
+    await put(providerName, {
+      type: "api",
+      key,
+    })
+
+    await AppRuntime.runPromise(
+      Config.Service.use((cfg) =>
+        Effect.gen(function* () {
+          const currentConfig = yield* cfg.getGlobal()
+
+          const modelsConfig: Record<string, any> = {}
+          for (const m of selectedModels as string[]) {
+            modelsConfig[m] = {
+              id: m,
+              name: m,
+            }
+          }
+
+          const providerConfig = currentConfig.provider || {}
+          providerConfig[providerName] = {
+            ...providerConfig[providerName],
+            api: "openai",
+            name: providerName,
+            options: {
+              ...(providerConfig[providerName]?.options || {}),
+              baseURL: url,
+            },
+            models: {
+              ...(providerConfig[providerName]?.models || {}),
+              ...modelsConfig,
+            },
+          }
+
+          yield* cfg.updateGlobal({
+            ...currentConfig,
+            provider: providerConfig,
+          })
+        })
+      )
+    )
+
+    prompts.outro(`Successfully added ${selectedModels.length} models for custom provider '${providerName}'!`)
+  },
 })
 
 export const ProvidersListCommand = cmd({
@@ -509,6 +638,14 @@ export const ProvidersLogoutCommand = cmd({
       Effect.gen(function* () {
         const auth = yield* Auth.Service
         yield* auth.remove(providerID)
+
+        const cfg = yield* Config.Service
+        const currentCfg = yield* cfg.getGlobal()
+        if (currentCfg.provider?.[providerID]) {
+          const { [providerID]: _, ...rest } = currentCfg.provider
+          const newCfg = { ...currentCfg, provider: Object.keys(rest).length > 0 ? rest : undefined }
+          yield* cfg.updateGlobal(newCfg)
+        }
       }),
     )
     prompts.outro("Logout successful")

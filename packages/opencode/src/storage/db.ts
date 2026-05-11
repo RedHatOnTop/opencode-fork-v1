@@ -133,7 +133,7 @@ export function use<T>(callback: (trx: TxOrDb) => T): T {
     if (err instanceof LocalContext.NotFound) {
       const effects: (() => void | Promise<void>)[] = []
       const result = ctx.provide({ effects, tx: Client() }, () => callback(Client()))
-      for (const effect of effects) effect()
+      for (const effect of effects) void effect()
       return result
     }
     throw err
@@ -145,7 +145,7 @@ export function effect(fn: () => any | Promise<any>) {
   try {
     ctx.use().effects.push(bound)
   } catch {
-    bound()
+    void bound()
   }
 }
 
@@ -164,7 +164,7 @@ export function transaction<T>(
       const effects: (() => void | Promise<void>)[] = []
       const txCallback = InstanceState.bind((tx: TxOrDb) => ctx.provide({ tx, effects }, () => callback(tx)))
       const result = Client().transaction(txCallback, { behavior: options?.behavior })
-      for (const effect of effects) effect()
+      for (const effect of effects) void effect()
       return result as NotPromise<T>
     }
     throw err

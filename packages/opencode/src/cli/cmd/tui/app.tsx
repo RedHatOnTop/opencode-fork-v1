@@ -20,6 +20,7 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
 import { DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
+import { DialogAddCustomProvider } from "@tui/component/dialog-add-custom-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { ProjectProvider } from "@tui/context/project"
@@ -33,6 +34,7 @@ import { DialogModel } from "@tui/component/dialog-model"
 import { useConnected } from "@tui/component/use-connected"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
+import { DialogSystemPrompt } from "@tui/component/dialog-system-prompt"
 import { DialogThemeList } from "@tui/component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
@@ -66,6 +68,7 @@ import { FormatError, FormatUnknownError } from "@/cli/error"
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
+import { DialogThinkingEffort } from "./component/dialog-thinking-effort"
 
 function rendererConfig(_config: TuiConfig.Info): CliRendererConfig {
   const mouseEnabled = !Flag.OPENCODE_DISABLE_MOUSE && (_config.mouse ?? true)
@@ -511,13 +514,13 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: "Agent cycle",
+      title: "Toggle vibe/spec mode",
       value: "agent.cycle",
       keybind: "agent_cycle",
       category: "Agent",
       hidden: true,
       onSelect: () => {
-        local.agent.move(1)
+        void local.workflow.toggle()
       },
     },
     {
@@ -543,13 +546,36 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: "Agent cycle reverse",
+      title: "Cycle thinking effort",
+      value: "thinking_effort.cycle",
+      keybind: "thinking_effort_cycle",
+      category: "Agent",
+      onSelect: () => {
+        local.model.thinkingEffort.cycle()
+      },
+    },
+    {
+      title: "Switch thinking effort",
+      value: "thinking_effort.list",
+      keybind: "thinking_effort_list",
+      category: "Agent",
+      hidden: local.model.thinkingEffort.list().length === 0,
+      slash: {
+        name: "thinking-effort",
+        aliases: ["thinking", "effort"],
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogThinkingEffort />)
+      },
+    },
+    {
+      title: "Toggle spec/vibe mode",
       value: "agent.cycle.reverse",
       keybind: "agent_cycle_reverse",
       category: "Agent",
       hidden: true,
       onSelect: () => {
-        local.agent.move(-1)
+        void local.workflow.toggle()
       },
     },
     {
@@ -561,6 +587,17 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       onSelect: () => {
         dialog.replace(() => <DialogProviderList />)
+      },
+      category: "Provider",
+    },
+    {
+      title: "Add custom provider",
+      value: "provider.add_custom",
+      slash: {
+        name: "add-custom",
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogAddCustomProvider />)
       },
       category: "Provider",
     },
@@ -590,6 +627,19 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       onSelect: () => {
         dialog.replace(() => <DialogStatus />)
+      },
+      category: "System",
+    },
+    {
+      title: "View system prompt",
+      value: "opencode.system_prompt",
+      keybind: "system_prompt",
+      slash: {
+        name: "system-prompt",
+        aliases: ["prompt"],
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogSystemPrompt />)
       },
       category: "System",
     },
@@ -638,6 +688,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     {
       title: "Open docs",
       value: "docs.open",
+      hidden: true,
       onSelect: () => {
         open("https://opencode.ai/docs").catch(() => {})
         dialog.clear()
@@ -692,14 +743,13 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       keybind: "terminal_suspend",
       category: "System",
       hidden: true,
-      enabled: tuiConfig.keybinds?.terminal_suspend !== "none",
+      enabled: process.platform !== "win32" && tuiConfig.keybinds?.terminal_suspend !== "none",
       onSelect: () => {
         process.once("SIGCONT", () => {
           renderer.resume()
         })
 
         renderer.suspend()
-        // pid=0 means send the signal to all processes in the process group
         process.kill(0, "SIGTSTP")
       },
     },
@@ -743,6 +793,60 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       onSelect: (dialog) => {
         const current = kv.get("diff_wrap_mode", "word")
         kv.set("diff_wrap_mode", current === "word" ? "none" : "word")
+        dialog.clear()
+      },
+    },
+    {
+      title: kv.get("graphify_enabled", false) ? "Disable Graphify" : "Enable Graphify",
+      value: "app.toggle.graphify",
+      category: "Feature",
+      onSelect: async (dialog) => {
+        const next = !kv.get("graphify_enabled", false)
+        kv.set("graphify_enabled", next)
+        try {
+          await sdk.client.config.update({ config: { graphify: { enabled: next } } })
+        } catch {}
+        toast.show({
+          variant: next ? "success" : "info",
+          title: next ? "Graphify Enabled" : "Graphify Disabled",
+          message: next
+            ? "Knowledge graph integration is active. Run `graphify .` to build a graph."
+            : "Knowledge graph integration is off.",
+          duration: 3000,
+        })
+        dialog.clear()
+      },
+    },
+    {
+      title: "Change working directory",
+      value: "app.cd",
+      category: "System",
+      slash: {
+        name: "cd",
+      },
+      onSelect: async (dialog) => {
+        const { DialogPrompt } = await import("@tui/ui/dialog-prompt")
+        const { Filesystem } = await import("@/util/filesystem")
+        const result = await DialogPrompt.show(dialog, "Change working directory", {
+          value: process.cwd(),
+          placeholder: "Enter directory path",
+        })
+        if (!result) return
+        const target = Filesystem.resolve(result)
+        if (!(await Filesystem.exists(target))) {
+          toast.show({ variant: "error", message: `Directory not found: ${target}`, duration: 3000 })
+          dialog.clear()
+          return
+        }
+        try {
+          process.chdir(target)
+          sdk.updateDirectory(target)
+          await sdk.client.instance.dispose().catch(() => {})
+          await sync.bootstrap()
+          toast.show({ variant: "success", message: `Working directory: ${target}`, duration: 2000 })
+        } catch (e) {
+          toast.show({ variant: "error", message: `Failed: ${e instanceof Error ? e.message : String(e)}`, duration: 3000 })
+        }
         dialog.clear()
       },
     },
@@ -847,8 +951,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
 
   return (
     <box
-      width={dimensions().width}
-      height={dimensions().height}
+      width={Math.max(1, dimensions().width)}
+      height={Math.max(1, dimensions().height)}
       backgroundColor={theme.background}
       onMouseDown={(evt) => {
         if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return

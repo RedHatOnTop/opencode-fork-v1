@@ -49,7 +49,7 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Bus } from "../bus"
 import { Agent } from "../agent/agent"
 import { Skill } from "../skill"
-import { SkillRegistry } from "../skill/registry"
+import { Service as SkillRegistryService, layer as SkillRegistryLayer } from "../skill/registry"
 import * as TokenBudget from "../skill/budget"
 import { Permission } from "@/permission"
 
@@ -83,7 +83,7 @@ export const layer: Layer.Layer<
   | Todo.Service
   | Agent.Service
   | Skill.Service
-  | SkillRegistry.Service
+  | SkillRegistryService
   | TokenBudget.Service
   | Session.Service
   | Provider.Service
@@ -258,9 +258,7 @@ export const layer: Layer.Layer<
       return (yield* all()).map((tool) => tool.id)
     })
 
-    const describeSkill = Effect.fn("ToolRegistry.describeSkill")(function* (agent: Agent.Info) {
-      const list = yield* skill.available(agent)
-      if (list.length === 0) return "No skills are currently available."
+    const describeSkill = Effect.fn("ToolRegistry.describeSkill")(function* (_agent: Agent.Info) {
       return [
         "Load a specialized skill that provides domain-specific instructions and workflows.",
         "",
@@ -270,10 +268,7 @@ export const layer: Layer.Layer<
         "",
         'Tool output includes a `<skill_content name="...">` block with the loaded content.',
         "",
-        "The following skills provide specialized sets of instructions for particular tasks",
-        "Invoke this tool to load a skill when a task matches one of the available skills listed below:",
-        "",
-        Skill.fmt(list, { verbose: false }),
+        "To discover available skills, use: search_skills, browse_skills.",
       ].join("\n")
     })
 
@@ -349,7 +344,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Question.defaultLayer),
     Layer.provide(Todo.defaultLayer),
     Layer.provide(Skill.defaultLayer),
-    Layer.provide(SkillRegistry.layer),
+    Layer.provide(SkillRegistryLayer),
     Layer.provide(TokenBudget.layer()),
     Layer.provide(Agent.defaultLayer),
     Layer.provide(Session.defaultLayer),

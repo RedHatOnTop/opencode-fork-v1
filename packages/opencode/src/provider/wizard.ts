@@ -23,22 +23,16 @@ export const ProviderConfig = Schema.Struct({
 })
 export type ProviderConfig = Schema.Schema.Type<typeof ProviderConfig>
 
-export const WizardState = Schema.Literals("idle", "awaiting_url", "awaiting_key", "fetching_models", "selecting_models", "saving")
+export const WizardState = Schema.Literals(["idle", "awaiting_url", "awaiting_key", "fetching_models", "selecting_models", "saving"])
 export type WizardState = Schema.Schema.Type<typeof WizardState>
 
 // ============================================================================
 // Errors
 // ============================================================================
 
-export class WizardValidationError extends Schema.TaggedError<WizardValidationError>("WizardValidationError")(
-  "WizardValidationError",
-  { field: Schema.String, message: Schema.String }
-) {}
+export class WizardValidationError extends Schema.TaggedErrorClass<WizardValidationError>()("WizardValidationError", { field: Schema.String, message: Schema.String }) {}
 
-export class FetchModelsError extends Schema.TaggedError<FetchModelsError>("FetchModelsError")(
-  "FetchModelsError",
-  { url: Schema.String, message: Schema.String }
-) {}
+export class FetchModelsError extends Schema.TaggedErrorClass<FetchModelsError>()("FetchModelsError", { url: Schema.String, message: Schema.String }) {}
 
 // ============================================================================
 // Validation Functions
@@ -193,7 +187,7 @@ const make = Effect.gen(function* () {
       log.debug("URL submitted", { url })
       return { state }
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => ({
           state: "awaiting_url" as const,
           error: error.message,
@@ -209,7 +203,7 @@ const make = Effect.gen(function* () {
       log.debug("API key submitted")
       return { state }
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => ({
           state: "awaiting_key" as const,
           error: error.message,
@@ -233,7 +227,7 @@ const make = Effect.gen(function* () {
       log.debug("Models fetched", { count: models.length })
       return { state, models }
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => ({
           state: "awaiting_key" as WizardState,
           models: [] as ModelInfo[],

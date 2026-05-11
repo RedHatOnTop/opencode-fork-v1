@@ -11,9 +11,18 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { writeHeapSnapshot } from "node:v8"
 import { Heap } from "@/cli/heap"
 import { AppRuntime } from "@/effect/app-runtime"
-import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process"
+import { ensureProcessMetadata, OPENCODE_WORKER_CWD } from "@opencode-ai/core/util/opencode-process"
+import { ensureLoopbackNoProxy } from "@/util/network"
 
+ensureLoopbackNoProxy()
 ensureProcessMetadata("worker")
+
+const workerCwd = process.env[OPENCODE_WORKER_CWD]
+if (workerCwd) {
+  try {
+    process.chdir(workerCwd)
+  } catch {}
+}
 
 await Log.init({
   print: process.argv.includes("--print-logs"),
@@ -28,13 +37,16 @@ Heap.start()
 
 process.on("unhandledRejection", (e) => {
   Log.Default.error("rejection", {
-    e: e instanceof Error ? e.message : e,
+    msg: e instanceof Error ? e.message : String(e),
+    stack: e instanceof Error ? e.stack : undefined,
   })
 })
 
 process.on("uncaughtException", (e) => {
   Log.Default.error("exception", {
-    e: e instanceof Error ? e.message : e,
+    msg: e instanceof Error ? e.message : String(e),
+    name: e instanceof Error ? e.name : undefined,
+    stack: e instanceof Error ? e.stack : undefined,
   })
 })
 
@@ -57,12 +69,22 @@ export const rpc = {
       headers,
       body: input.body,
     })
-    const response = await Server.Default().app.fetch(request)
-    const body = await response.text()
-    return {
-      status: response.status,
-      headers: Object.fromEntries(response.headers.entries()),
-      body,
+    try {
+      const response = await Server.Default().app.fetch(request)
+      const body = await response.text()
+      return {
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries()),
+        body,
+      }
+    } catch (e) {
+      Log.Default.error("worker fetch error", {
+        url: input.url,
+        method: input.method,
+        msg: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
+      })
+      throw e
     }
   },
   snapshot() {

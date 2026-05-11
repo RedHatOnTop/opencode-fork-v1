@@ -4,7 +4,7 @@ import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { hideBin } from "yargs/helpers"
 import { Log } from "./node"
 
-Log.init({
+void Log.init({
   print: false,
 })
 

@@ -306,7 +306,7 @@ export const layer = Layer.effect(
           if (!client) continue
 
           result.push(client)
-          Bus.publish(Event.Updated, {})
+          void Bus.publish(Event.Updated, {})
         }
 
         return result

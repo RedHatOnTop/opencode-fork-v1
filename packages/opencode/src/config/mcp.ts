@@ -62,4 +62,59 @@ export const Info = Schema.Union([Local, Remote])
   .pipe(withStatics((s) => ({ zod: zod(s) })))
 export type Info = Schema.Schema.Type<typeof Info>
 
+export const BUILTIN_SERVERS: Record<string, Info> = {
+  context7: {
+    type: "local",
+    command: ["npx", "-y", "@upstash/context7-mcp@latest"],
+    enabled: true,
+  },
+  "sequential-thinking": {
+    type: "local",
+    command: ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"],
+    enabled: true,
+  },
+  github: {
+    type: "local",
+    command: ["npx", "-y", "@modelcontextprotocol/server-github"],
+    environment: {
+      GITHUB_PERSONAL_ACCESS_TOKEN: "",
+    },
+    enabled: false,
+  },
+  "exa-web-search": {
+    type: "local",
+    command: ["npx", "-y", "exa-mcp-server"],
+    environment: {
+      EXA_API_KEY: "",
+    },
+    enabled: false,
+  },
+  firecrawl: {
+    type: "local",
+    command: ["npx", "-y", "firecrawl-mcp"],
+    environment: {
+      FIRECRAWL_API_KEY: "",
+    },
+    enabled: false,
+  },
+  memory: {
+    type: "local",
+    command: ["npx", "-y", "@modelcontextprotocol/server-memory"],
+    enabled: false,
+  },
+}
+
+export function mergeBuiltinServers(userMcp: Record<string, Info> | undefined): Record<string, Info> {
+  const result: Record<string, Info> = {}
+  for (const [name, config] of Object.entries(BUILTIN_SERVERS)) {
+    result[name] = config
+  }
+  if (userMcp) {
+    for (const [name, config] of Object.entries(userMcp)) {
+      result[name] = config
+    }
+  }
+  return result
+}
+
 export * as ConfigMCP from "./mcp"

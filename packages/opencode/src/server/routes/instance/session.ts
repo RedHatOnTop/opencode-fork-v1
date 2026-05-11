@@ -27,6 +27,7 @@ import { zodObject } from "@/util/effect-zod"
 import { Bus } from "@/bus"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { jsonRequest, runRequest } from "./trace"
+import * as SystemPromptLog from "@/session/system-prompt-log"
 
 const log = Log.create({ service: "server" })
 
@@ -112,87 +113,18 @@ export const SessionRoutes = lazy(() =>
         }),
     )
     .get(
-      "/:sessionID",
+      "/:sessionID/system-prompt",
       describeRoute({
-        summary: "Get session",
-        description: "Retrieve detailed information about a specific OpenCode session.",
-        tags: ["Session"],
-        operationId: "session.get",
+        summary: "Get system prompt",
+        description:
+          "Retrieve the last system prompt that was sent to the LLM for this session, for transparency.",
+        operationId: "session.systemPrompt",
         responses: {
           200: {
-            description: "Get session",
-            content: {
-              "application/json": {
-                schema: resolver(Session.Info.zod),
-              },
-            },
+            description: "System prompt data",
           },
-          ...errors(400, 404),
-        },
-      }),
-      validator(
-        "param",
-        z.object({
-          sessionID: Session.GetInput.zod,
-        }),
-      ),
-      async (c) => {
-        const sessionID = c.req.valid("param").sessionID
-        return jsonRequest("SessionRoutes.get", c, function* () {
-          const session = yield* Session.Service
-          return yield* session.get(sessionID)
-        })
-      },
-    )
-    .get(
-      "/:sessionID/children",
-      describeRoute({
-        summary: "Get session children",
-        tags: ["Session"],
-        description: "Retrieve all child sessions that were forked from the specified parent session.",
-        operationId: "session.children",
-        responses: {
-          200: {
-            description: "List of children",
-            content: {
-              "application/json": {
-                schema: resolver(Session.Info.zod.array()),
-              },
-            },
-          },
-          ...errors(400, 404),
-        },
-      }),
-      validator(
-        "param",
-        z.object({
-          sessionID: Session.ChildrenInput.zod,
-        }),
-      ),
-      async (c) => {
-        const sessionID = c.req.valid("param").sessionID
-        return jsonRequest("SessionRoutes.children", c, function* () {
-          const session = yield* Session.Service
-          return yield* session.children(sessionID)
-        })
-      },
-    )
-    .get(
-      "/:sessionID/todo",
-      describeRoute({
-        summary: "Get session todos",
-        description: "Retrieve the todo list associated with a specific session, showing tasks and action items.",
-        operationId: "session.todo",
-        responses: {
-          200: {
-            description: "Todo list",
-            content: {
-              "application/json": {
-                schema: resolver(Todo.Info.zod.array()),
-              },
-            },
-          },
-          ...errors(400, 404),
+          404: { description: "No system prompt recorded yet" },
+          ...errors(400),
         },
       }),
       validator(
@@ -203,10 +135,9 @@ export const SessionRoutes = lazy(() =>
       ),
       async (c) => {
         const sessionID = c.req.valid("param").sessionID
-        return jsonRequest("SessionRoutes.todo", c, function* () {
-          const todo = yield* Todo.Service
-          return yield* todo.get(sessionID)
-        })
+        const entry = SystemPromptLog.get(sessionID)
+        if (!entry) return c.json({ error: "No system prompt recorded for this session" }, 404)
+        return c.json(entry)
       },
     )
     .post(

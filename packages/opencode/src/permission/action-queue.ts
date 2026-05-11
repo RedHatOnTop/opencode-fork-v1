@@ -14,7 +14,7 @@ const log = Log.create({ service: "action-queue" })
 /**
  * Queue item status
  */
-export const QueueStatus = Schema.Literal("pending", "approved", "rejected", "expired")
+export const QueueStatus = Schema.Literals(["pending", "approved", "rejected", "expired"])
 export type QueueStatus = Schema.Schema.Type<typeof QueueStatus>
 
 /**
@@ -38,9 +38,9 @@ export interface Interface {
   readonly add: (item: Omit<QueueItem, "id" | "requestedAt" | "status">) => Effect.Effect<QueueItem>
   readonly list: (sessionId?: string) => Effect.Effect<ReadonlyArray<QueueItem>>
   readonly listPending: (sessionId?: string) => Effect.Effect<ReadonlyArray<QueueItem>>
-  readonly approve: (id: string) => Effect.Effect<QueueItem>
-  readonly approveAll: (sessionId?: string) => Effect.Effect<ReadonlyArray<QueueItem>>
-  readonly reject: (id: string) => Effect.Effect<QueueItem>
+  readonly approve: (id: string) => Effect.Effect<QueueItem, Error>
+  readonly approveAll: (sessionId?: string) => Effect.Effect<ReadonlyArray<QueueItem>, Error>
+  readonly reject: (id: string) => Effect.Effect<QueueItem, Error>
   readonly count: (sessionId?: string) => Effect.Effect<number>
   readonly countPending: (sessionId?: string) => Effect.Effect<number>
 }
@@ -183,7 +183,7 @@ export const defaultLayer = layer
 /**
  * Check if a session has pending actions
  */
-export function hasPendingActions(sessionId: string): Effect.Effect<boolean> {
+export function hasPendingActions(sessionId: string) {
   return Effect.gen(function* () {
     const service = yield* Service
     const count = yield* service.countPending(sessionId)
@@ -210,3 +210,5 @@ export function formatQueue(items: ReadonlyArray<QueueItem>): string {
 
   return items.map(formatQueueItem).join("\n\n")
 }
+
+export * as ActionQueue from "./action-queue"

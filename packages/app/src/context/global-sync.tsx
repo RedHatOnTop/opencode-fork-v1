@@ -331,7 +331,9 @@ function createGlobalSync() {
         setGlobalProject: setProjects,
       })
       if (event.type === "server.connected" || event.type === "global.disposed") {
-        if (recent) return
+        const skipRefresh = recent && event.type === "server.connected"
+        if (skipRefresh) return
+        bootstrap.refetch()
         for (const directory of Object.keys(children.children)) {
           queue.push(directory)
         }
@@ -396,7 +398,15 @@ function createGlobalSync() {
 
   const updateConfigMutation = useMutation(() => ({
     mutationFn: (config: Config) => globalSDK.client.global.config.update({ config }),
-    onSuccess: () => bootstrap.refetch(),
+    onSuccess: () => {
+      bootstrap.refetch()
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: [null, "providers"] })
+        for (const directory of Object.keys(children.children)) {
+          queryClient.invalidateQueries({ queryKey: [directory, "providers"] })
+        }
+      }, 2000)
+    },
   }))
 
   return {

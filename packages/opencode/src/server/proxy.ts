@@ -61,6 +61,7 @@ const app = (upgrade: UpgradeWebSocket) =>
     "/__workspace_ws",
     upgrade((c) => {
       const url = c.req.header("x-opencode-proxy-url")
+      const MAX_QUEUE_SIZE = 1000
       const queue: Msg[] = []
       let remote: WebSocket | undefined
       return {
@@ -92,7 +93,7 @@ const app = (upgrade: UpgradeWebSocket) =>
             remote.send(data)
             return
           }
-          queue.push(data)
+          if (queue.length < MAX_QUEUE_SIZE) queue.push(data)
         },
         onClose(event) {
           remote?.close(event.code, event.reason)
@@ -113,15 +114,17 @@ export async function http(url: string | URL, extra: HeadersInit | undefined, re
     })
   }
 
-  return fetch(
-    new Request(url, {
-      method: req.method,
-      headers: headers(req, extra),
-      body: req.method === "GET" || req.method === "HEAD" ? undefined : req.body,
-      redirect: "manual",
-      signal: req.signal,
-    }),
-  ).then((res) => {
+  try {
+    const res = await fetch(
+      new Request(url, {
+        method: req.method,
+        headers: headers(req, extra),
+        body: req.method === "GET" || req.method === "HEAD" ? undefined : req.body,
+        redirect: "manual",
+        signal: req.signal,
+      }),
+    )
+
     const sync = Fence.parse(res.headers)
     const next = new Headers(res.headers)
     next.delete("content-encoding")
@@ -136,7 +139,16 @@ export async function http(url: string | URL, extra: HeadersInit | undefined, re
         headers: next,
       })
     })
-  })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.error("proxy fetch failed", { url: String(url), error: msg })
+    return new Response(`Bad Gateway: ${msg}`, {
+      status: 502,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+      },
+    })
+  }
 }
 
 export function websocket(

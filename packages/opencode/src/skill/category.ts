@@ -84,7 +84,7 @@ export function buildCategoryTree(registry: SkillRegistryEntry[]): CategoryTree 
       // Increment skillCount for all nodes in the path
       let countNode: CategoryNode | undefined = root
       for (const segment of path) {
-        countNode = countNode.children.find((c) => c.name === segment)
+        countNode = countNode?.children.find((c) => c.name === segment)
         if (countNode) countNode.skillCount++
       }
     }
@@ -172,12 +172,12 @@ export function browse(tree: CategoryTree, path?: string[]): BrowseResult {
   }
 
   return {
-    categories: current.children.map((node) => ({
+    categories: current!.children.map((node) => ({
       name: node.name,
       skillCount: node.skillCount,
       childCount: node.children.length,
     })),
-    skills: current.skills,
+    skills: current!.skills,
   }
 }
 

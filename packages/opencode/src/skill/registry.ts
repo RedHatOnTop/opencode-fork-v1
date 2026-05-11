@@ -19,14 +19,18 @@ import type {
   Tier,
   InvertedIndex,
   CategoryTree,
+  CategoryNode,
   AlwaysSkillsData,
   SkillRegistryData,
   InvertedIndexData,
   CategoryTreeData,
 } from "./types"
+import type { AgentSkillProfile } from "./agent-skill-profile"
+import { isSkillAccessible } from "./agent-skill-profile"
 import { extractTags } from "./tag-extractor"
 import { search as bm25Search, buildInvertedIndex } from "./search"
 import { browse as categoryBrowse, suggestCategories } from "./category"
+import { Skill } from "./index"
 
 // ---------------------------------------------------------------------------
 // Interface
@@ -41,6 +45,11 @@ export interface Interface {
   readonly addLocalSkill: (skill: SkillRegistryEntry) => Effect.Effect<void>
   readonly search: (query: string, options?: { limit?: number; tierFilter?: Tier[]; categoryFilter?: string }) => Effect.Effect<import("./types").SearchResult[]>
   readonly browse: (path?: string[]) => Effect.Effect<import("./category").BrowseResult>
+  readonly canLoadSkill: (skillName: string, agentType: string) => Effect.Effect<boolean>
+  readonly getAgentProfile: (agentType: string) => Effect.Effect<AgentSkillProfile | undefined>
+  readonly getSkillsForAgent: (agentType: string) => Effect.Effect<ReadonlyArray<SkillRegistryEntry>>
+  readonly searchForAgent: (agentType: string, query: string, options?: { limit?: number }) => Effect.Effect<import("./types").SearchResult[]>
+  readonly systemPromptSectionForAgent: (agentType: string) => Effect.Effect<string>
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +67,8 @@ let _indexData: InvertedIndexData | null = null
 let _treeData: CategoryTreeData | null = null
 let _alwaysData: AlwaysSkillsData | null = null
 
+let _agentProfilesData: { profiles: AgentSkillProfile[] } | null = null
+
 /**
  * Load the build-time generated data files.
  * These are imported as JSON — Bun natively supports JSON imports.
@@ -67,34 +78,50 @@ async function loadData(): Promise<{
   index: InvertedIndexData
   tree: CategoryTreeData
   always: AlwaysSkillsData
+  agentProfiles: { profiles: AgentSkillProfile[] }
 }> {
-  if (_registryData && _indexData && _treeData && _alwaysData) {
-    return { registry: _registryData, index: _indexData, tree: _treeData, always: _alwaysData }
+  if (_registryData && _indexData && _treeData && _alwaysData && _agentProfilesData) {
+    return {
+      registry: _registryData,
+      index: _indexData,
+      tree: _treeData,
+      always: _alwaysData,
+      agentProfiles: _agentProfilesData,
+    }
   }
 
   const dataDir = new URL("./data/", import.meta.url).pathname
 
   try {
-    const [registryStr, indexStr, treeStr, alwaysStr] = await Promise.all([
+    const [registryStr, indexStr, treeStr, alwaysStr, profilesStr] = await Promise.all([
       Bun.file(dataDir + "skill-registry.json").text(),
       Bun.file(dataDir + "inverted-index.json").text(),
       Bun.file(dataDir + "category-tree.json").text(),
       Bun.file(dataDir + "always-skills.json").text(),
+      Bun.file(dataDir + "agent-skill-profiles.json").text(),
     ])
 
     _registryData = JSON.parse(registryStr)
     _indexData = JSON.parse(indexStr)
     _treeData = JSON.parse(treeStr)
     _alwaysData = JSON.parse(alwaysStr)
+    _agentProfilesData = JSON.parse(profilesStr)
   } catch {
     // Data files don't exist yet — return empty defaults
     _registryData = { version: 1, generatedAt: new Date().toISOString(), entries: [], stats: { total: 0, byTier: {}, reclassified: [] } }
     _indexData = { version: 1, meta: { totalDocs: 0, avgdl: 0, k1: 1.2, b: 0.75 }, postings: {}, idf: {}, docLengths: {} }
     _treeData = { version: 1, totalSkills: 0, roots: [] }
     _alwaysData = { version: 1, skills: [], totalEstimatedTokens: 0 }
+    _agentProfilesData = { profiles: [] }
   }
 
-  return { registry: _registryData, index: _indexData, tree: _treeData, always: _alwaysData }
+  return {
+    registry: _registryData!,
+    index: _indexData!,
+    tree: _treeData!,
+    always: _alwaysData!,
+    agentProfiles: _agentProfilesData!,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -127,8 +154,14 @@ export const make = Effect.gen(function* () {
 
   // Build category tree from loaded data
   const categoryTree: CategoryTree = {
-    roots: data.tree.roots,
+    roots: data.tree.roots as unknown as CategoryNode[],
     totalSkills: data.tree.totalSkills,
+  }
+
+  // Build agent profile map for fast lookup
+  const agentProfileMap = new Map<string, AgentSkillProfile>()
+  for (const profile of data.agentProfiles.profiles) {
+    agentProfileMap.set(profile.agentType, profile)
   }
 
   const get = Effect.fn("SkillRegistry.get")(function* (name: string) {
@@ -226,39 +259,202 @@ export const make = Effect.gen(function* () {
 
   const systemPromptSection = Effect.fn("SkillRegistry.systemPromptSection")(function* () {
     const always = yield* alwaysSkills()
+    const skillService = yield* Effect.serviceOption(Skill.Service)
 
     const sections: string[] = []
 
-    // ALWAYS skills section
     if (always.length > 0) {
       sections.push("<always_skills>")
       for (const skill of always) {
-        sections.push(`  <skill name="${skill.name}">`)
-        sections.push(`    ${skill.description}`)
-        sections.push(`    Tags: ${skill.tags.join(", ")}`)
-        sections.push(`  </skill>`)
+        let fullContent: string | undefined
+        if (skillService._tag === "Some") {
+          const info = yield* skillService.value.get(skill.skillId).pipe(
+            Effect.catch(() => Effect.succeed(undefined)),
+          )
+          if (info) {
+            fullContent = info.content
+          }
+        }
+        if (fullContent) {
+          sections.push(`  <skill name="${skill.name}">`)
+          sections.push(fullContent.trim())
+          sections.push(`  </skill>`)
+        } else {
+          sections.push(`  <skill name="${skill.name}">`)
+          sections.push(`    ${skill.description}`)
+          sections.push(`  </skill>`)
+        }
       }
       sections.push("</always_skills>")
     }
 
-    // Tool usage guide
-    sections.push("")
-    sections.push("## Skill Search Tools")
-    sections.push("Over 400 curated skills are indexed and available. Use these tools to find and load skills:")
-    sections.push("- browse_skills: Explore skills by category hierarchy")
-    sections.push("- search_skills: Search skills by keywords (BM25 search)")
-    sections.push("- load_skill: Load a specific skill's full content")
-    sections.push("")
+    sections.push("Additional skills are available on-demand via: search_skills, browse_skills, load_skill.")
 
-    // Category overview
-    const topCategories = categoryTree.roots
-      .map((r) => `  - ${r.name} (${r.skillCount} skills)`)
-      .join("\n")
+    return sections.join("\n")
+  })
 
-    if (topCategories) {
-      sections.push("## Category Overview")
-      sections.push(topCategories)
+  // ---------------------------------------------------------------------------
+  // Agent-scoped skill access (Task 6)
+  // ---------------------------------------------------------------------------
+
+  const canLoadSkill = Effect.fn("SkillRegistry.canLoadSkill")(function* (skillName: string, agentType: string) {
+    const profile = agentProfileMap.get(agentType)
+    if (!profile) return true
+
+    const entry = yield* get(skillName)
+    if (!entry) return false
+
+    return isSkillAccessible(
+      { tier: entry.tier, tags: entry.tags, section: entry.section },
+      profile,
+    )
+  })
+
+  const getAgentProfile = Effect.fn("SkillRegistry.getAgentProfile")(function* (agentType: string) {
+    return agentProfileMap.get(agentType)
+  })
+
+  const getSkillsForAgent = Effect.fn("SkillRegistry.getSkillsForAgent")(function* (agentType: string) {
+    const profile = agentProfileMap.get(agentType)
+    if (!profile) {
+      // If no profile found, return empty (fallback behavior)
+      return []
     }
+
+    const map = yield* Ref.get(entriesMap)
+    const allEntries = Array.from(map.values())
+
+    // Filter by allowed tiers
+    const tierAllowed = allEntries.filter((e) => profile.allowedTiers.includes(e.tier))
+
+    // Filter by category (partial match, case insensitive)
+    const categoryAllowed = tierAllowed.filter((e) => {
+      const section = e.section.toLowerCase()
+      // Check denied categories first (takes precedence)
+      const isDenied = profile.deniedCategories.some((dc) =>
+        section.includes(dc.toLowerCase())
+      )
+      if (isDenied) return false
+
+      // Check allowed categories
+      return profile.allowedCategories.some((ac) =>
+        section.includes(ac.toLowerCase())
+      )
+    })
+
+    // Filter by tags (must have at least one allowed tag, unless denied)
+    const tagAllowed = categoryAllowed.filter((e) => {
+      // Check denied tags
+      const hasDeniedTag = e.tags.some((t) =>
+        profile.deniedTags.some((dt) => t.toLowerCase().includes(dt.toLowerCase()))
+      )
+      if (hasDeniedTag) return false
+
+      // Check allowed tags (must have at least one)
+      return e.tags.some((t) =>
+        profile.allowedTags.some((at) => t.toLowerCase().includes(at.toLowerCase()))
+      )
+    })
+
+    return tagAllowed
+  })
+
+  const searchForAgent = Effect.fn("SkillRegistry.searchForAgent")(function* (
+    agentType: string,
+    query: string,
+    options?: { limit?: number },
+  ) {
+    const profile = agentProfileMap.get(agentType)
+    if (!profile) {
+      // Fallback to regular search with default options
+      const map = yield* Ref.get(entriesMap)
+      const registryMap = new Map<string, SkillRegistryEntry>()
+      for (const [key, val] of map) {
+        registryMap.set(key, val)
+      }
+      return bm25Search(query, invertedIndex, registryMap, { limit: options?.limit })
+    }
+
+    // Get skills accessible to this agent
+    const agentSkills = yield* getSkillsForAgent(agentType)
+    const allowedSkillIds = new Set(agentSkills.map((s) => s.skillId))
+
+    // Create filtered registry map
+    const map = yield* Ref.get(entriesMap)
+    const filteredMap = new Map<string, SkillRegistryEntry>()
+    for (const [key, val] of map) {
+      if (allowedSkillIds.has(key)) {
+        filteredMap.set(key, val)
+      }
+    }
+
+    // Search within filtered skills
+    const results = bm25Search(query, invertedIndex, filteredMap, { limit: options?.limit })
+
+    // Apply search boost from agent profile
+    return results.map((r) => {
+      const entry = filteredMap.get(r.skillId)
+      if (!entry) return r
+
+      // Calculate boost multiplier
+      let boost = 1.0
+      for (const tag of entry.tags) {
+        const tagBoost = profile.searchBoost[tag]
+        if (tagBoost && tagBoost > boost) {
+          boost = tagBoost
+        }
+      }
+
+      return {
+        ...r,
+        score: r.score * boost,
+      }
+    }).sort((a, b) => b.score - a.score) // Re-sort after boost
+  })
+
+  const systemPromptSectionForAgent = Effect.fn("SkillRegistry.systemPromptSectionForAgent")(function* (agentType: string) {
+    const profile = agentProfileMap.get(agentType)
+    if (!profile) {
+      return yield* systemPromptSection()
+    }
+
+    const skillService = yield* Effect.serviceOption(Skill.Service)
+    const globalAlwaysIds = yield* Ref.get(alwaysSet)
+
+    const sections: string[] = []
+
+    const map = yield* Ref.get(entriesMap)
+    const agentAlwaysSkills = profile.alwaysSkills
+      .filter((id) => !globalAlwaysIds.has(id))
+      .map((id) => map.get(id))
+      .filter((s): s is SkillRegistryEntry => s !== undefined)
+
+    if (agentAlwaysSkills.length > 0) {
+      sections.push(`<always_skills agent="${agentType}">`)
+      for (const skill of agentAlwaysSkills) {
+        let fullContent: string | undefined
+        if (skillService._tag === "Some") {
+          const info = yield* skillService.value.get(skill.skillId).pipe(
+            Effect.catch(() => Effect.succeed(undefined)),
+          )
+          if (info) {
+            fullContent = info.content
+          }
+        }
+        if (fullContent) {
+          sections.push(`  <skill name="${skill.name}">`)
+          sections.push(fullContent.trim())
+          sections.push(`  </skill>`)
+        } else {
+          sections.push(`  <skill name="${skill.name}">`)
+          sections.push(`    ${skill.description}`)
+          sections.push(`  </skill>`)
+        }
+      }
+      sections.push("</always_skills>")
+    }
+
+    sections.push(`Additional skills (${profile.allowedTiers.join(", ")} tier) available via: search_skills, browse_skills, load_skill.`)
 
     return sections.join("\n")
   })
@@ -272,7 +468,15 @@ export const make = Effect.gen(function* () {
     addLocalSkill,
     search: searchSkills,
     browse: browseCategories,
+    canLoadSkill,
+    getAgentProfile,
+    getSkillsForAgent,
+    searchForAgent,
+    systemPromptSectionForAgent,
   })
 })
 
 export const layer = Layer.effect(Service, make)
+
+// Namespace export for convenience
+export const SkillRegistry = { Service, layer }

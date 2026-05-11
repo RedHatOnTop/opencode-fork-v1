@@ -6,6 +6,9 @@ import { ACP } from "@/acp/agent"
 import { Server } from "@/server/server"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
+import { ensureLoopbackNoProxy } from "@/util/network"
+
+ensureLoopbackNoProxy()
 
 const log = Log.create({ service: "acp-command" })
 

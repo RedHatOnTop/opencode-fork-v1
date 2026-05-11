@@ -56,18 +56,18 @@ export const ThemeCommand = cmd({
         switch (action) {
           case "list": {
             const themes = yield* theme.listThemes()
-            const current = yield* theme.getCurrentTheme
+            const current = yield* theme.getCurrentTheme()
 
             UI.println(UI.Style.TEXT_INFO_BOLD + "Available Themes:" + UI.Style.TEXT_NORMAL)
             UI.println("")
 
-            themes.forEach((t, index) => {
+            themes.forEach((t: { name: string; description: string; isDark: boolean }, index: number) => {
               const isCurrent = t.name === current.name
               const marker = isCurrent ? UI.Style.TEXT_SUCCESS + "● " + UI.Style.TEXT_NORMAL : "  "
               const darkIndicator = t.isDark ? "🌙" : "☀️"
               const name = isCurrent
                 ? UI.Style.TEXT_SUCCESS_BOLD + t.name + UI.Style.TEXT_NORMAL
-                : UI.Style.TEXT_BOLD + t.name + UI.Style.TEXT_NORMAL
+                : UI.Style.TEXT_NORMAL_BOLD + t.name + UI.Style.TEXT_NORMAL
 
               UI.println(`${marker}${darkIndicator} ${name}`)
               UI.println(`    ${t.description}`)
@@ -99,7 +99,7 @@ export const ThemeCommand = cmd({
 
             yield* theme.setTheme(name)
 
-            const newTheme = yield* theme.getCurrentTheme
+            const newTheme = yield* theme.getCurrentTheme()
             UI.println(UI.Style.TEXT_SUCCESS + `✓ Theme set to: ${newTheme.name}` + UI.Style.TEXT_NORMAL)
             UI.println("")
             UI.println(`Description: ${newTheme.description}`)
@@ -110,12 +110,12 @@ export const ThemeCommand = cmd({
           }
 
           case "get": {
-            const current = yield* theme.getCurrentTheme
-            const isDark = yield* theme.isDark
+            const current = yield* theme.getCurrentTheme()
+            const isDark = yield* theme.isDark()
 
             UI.println(UI.Style.TEXT_INFO_BOLD + "Current Theme:" + UI.Style.TEXT_NORMAL)
             UI.println("")
-            UI.println(`  Name:        ${UI.Style.TEXT_BOLD}${current.name}${UI.Style.TEXT_NORMAL}`)
+            UI.println(`  Name:        ${UI.Style.TEXT_NORMAL_BOLD}${current.name}${UI.Style.TEXT_NORMAL}`)
             UI.println(`  Description: ${current.description}`)
             UI.println(`  Mode:        ${isDark ? UI.Style.TEXT_DIM + "Dark" : "Light"}${UI.Style.TEXT_NORMAL}`)
             UI.println("")
@@ -124,12 +124,12 @@ export const ThemeCommand = cmd({
           }
 
           case "preview": {
-            const current = yield* theme.getCurrentTheme
+            const current = yield* theme.getCurrentTheme()
 
             UI.println(UI.Style.TEXT_INFO_BOLD + `Theme Preview: ${current.name}` + UI.Style.TEXT_NORMAL)
             UI.println("")
 
-            UI.println(UI.Style.TEXT_BOLD + "UI Colors:" + UI.Style.TEXT_NORMAL)
+            UI.println(UI.Style.TEXT_NORMAL_BOLD + "UI Colors:" + UI.Style.TEXT_NORMAL)
             printColorSample("Primary", current.colors.primary)
             printColorSample("Secondary", current.colors.secondary)
             printColorSample("Success", current.colors.success)
@@ -141,14 +141,14 @@ export const ThemeCommand = cmd({
             printColorSample("Foreground", current.colors.foreground)
             UI.println("")
 
-            UI.println(UI.Style.TEXT_BOLD + "Style Samples:" + UI.Style.TEXT_NORMAL)
+            UI.println(UI.Style.TEXT_NORMAL_BOLD + "Style Samples:" + UI.Style.TEXT_NORMAL)
             UI.println(`  ${UI.Style.TEXT_NORMAL}TEXT_NORMAL${UI.Style.TEXT_NORMAL}`)
-            UI.println(`  ${UI.Style.TEXT_BOLD}TEXT_BOLD${UI.Style.TEXT_NORMAL}`)
+            UI.println(`  ${UI.Style.TEXT_NORMAL_BOLD}TEXT_BOLD${UI.Style.TEXT_NORMAL}`)
             UI.println(`  ${UI.Style.TEXT_DIM}TEXT_DIM${UI.Style.TEXT_NORMAL}`)
             UI.println(`  ${UI.Style.TEXT_WARNING}TEXT_WARNING${UI.Style.TEXT_NORMAL}`)
             UI.println(`  ${UI.Style.TEXT_WARNING_BOLD}TEXT_WARNING_BOLD${UI.Style.TEXT_NORMAL}`)
-            UI.println(`  ${UI.Style.TEXT_ERROR}TEXT_ERROR${UI.Style.TEXT_NORMAL}`)
-            UI.println(`  ${UI.Style.TEXT_ERROR_BOLD}TEXT_ERROR_BOLD${UI.Style.TEXT_NORMAL}`)
+            UI.println(`  ${UI.Style.TEXT_DANGER}TEXT_ERROR${UI.Style.TEXT_NORMAL}`)
+            UI.println(`  ${UI.Style.TEXT_DANGER_BOLD}TEXT_ERROR_BOLD${UI.Style.TEXT_NORMAL}`)
             UI.println(`  ${UI.Style.TEXT_SUCCESS}TEXT_SUCCESS${UI.Style.TEXT_NORMAL}`)
             UI.println(`  ${UI.Style.TEXT_SUCCESS_BOLD}TEXT_SUCCESS_BOLD${UI.Style.TEXT_NORMAL}`)
             UI.println(`  ${UI.Style.TEXT_INFO}TEXT_INFO${UI.Style.TEXT_NORMAL}`)
@@ -164,7 +164,7 @@ export const ThemeCommand = cmd({
         }
       })
 
-      await Effect.runPromise(Effect.provide(program, themeLayer))
+      await Effect.runPromise(Effect.provide(program, themeLayer) as any)
     })
   },
 })

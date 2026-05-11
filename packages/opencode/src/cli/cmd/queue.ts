@@ -33,11 +33,11 @@ function formatQueueItem(item: QueueItem, index: number): string {
       : item.status === "approved"
         ? UI.Style.TEXT_SUCCESS
         : item.status === "rejected"
-          ? UI.Style.TEXT_ERROR
+          ? UI.Style.TEXT_DANGER
           : UI.Style.TEXT_DIM
 
   const lines = [
-    `${index + 1}. [${statusColor}${item.status.toUpperCase()}${UI.Style.TEXT_NORMAL}] ${UI.Style.TEXT_BOLD}${item.id.slice(0, 8)}${UI.Style.TEXT_NORMAL} - ${date}`,
+    `${index + 1}. [${statusColor}${item.status.toUpperCase()}${UI.Style.TEXT_NORMAL}] ${UI.Style.TEXT_NORMAL_BOLD}${item.id.slice(0, 8)}${UI.Style.TEXT_NORMAL} - ${date}`,
     `   Reason: ${item.reason}`,
     `   Command: ${item.command.slice(0, 60)}${item.command.length > 60 ? "..." : ""}`,
   ]
@@ -58,7 +58,7 @@ function formatSummary(items: ReadonlyArray<QueueItem>): string {
     `Total: ${items.length}`,
     `  ${UI.Style.TEXT_WARNING}Pending: ${pending}${UI.Style.TEXT_NORMAL}`,
     `  ${UI.Style.TEXT_SUCCESS}Approved: ${approved}${UI.Style.TEXT_NORMAL}`,
-    `  ${UI.Style.TEXT_ERROR}Rejected: ${rejected}${UI.Style.TEXT_NORMAL}`,
+    `  ${UI.Style.TEXT_DANGER}Rejected: ${rejected}${UI.Style.TEXT_NORMAL}`,
     `  ${UI.Style.TEXT_DIM}Expired: ${expired}${UI.Style.TEXT_NORMAL}`,
   ].join(" | ")
 }
@@ -174,7 +174,7 @@ export const QueueCommand = cmd({
 
             const item = yield* queue.reject(id)
             UI.println(
-              UI.Style.TEXT_ERROR + `Rejected action: ${item.id.slice(0, 8)}` + UI.Style.TEXT_NORMAL
+              UI.Style.TEXT_DANGER + `Rejected action: ${item.id.slice(0, 8)}` + UI.Style.TEXT_NORMAL
             )
             UI.println(`  Command: ${item.command.slice(0, 60)}${item.command.length > 60 ? "..." : ""}`)
 

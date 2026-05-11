@@ -15,6 +15,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import {
   Service as WorkflowService,
   WorkflowMode,
+  type ModeConfig,
   defaultLayer as workflowLayer,
 } from "@/workflow/workflow"
 
@@ -34,15 +35,15 @@ function formatModeDescription(mode: WorkflowMode): string {
 /**
  * Get current mode display
  */
-async function getCurrentModeDisplay(): Promise<string> {
+async function getCurrentModeDisplay(): Promise<{ mode: WorkflowMode; config: ModeConfig }> {
   const program = Effect.gen(function* () {
     const workflow = yield* WorkflowService
-    const mode = yield* workflow.getMode
-    const config = yield* workflow.getConfig
+    const mode = yield* workflow.getMode()
+    const config = yield* workflow.getConfig()
     return { mode, config }
   })
 
-  return Effect.runPromise(Effect.provide(program, workflowLayer))
+  return Effect.runPromise(Effect.provide(program, workflowLayer) as any)
 }
 
 /**
@@ -55,7 +56,7 @@ async function setMode(mode: WorkflowMode, specFile?: string): Promise<void> {
     log.info("Workflow mode changed", { mode, specFile })
   })
 
-  await Effect.runPromise(Effect.provide(program, workflowLayer))
+  await Effect.runPromise(Effect.provide(program, workflowLayer) as any)
 }
 
 /**
@@ -64,10 +65,10 @@ async function setMode(mode: WorkflowMode, specFile?: string): Promise<void> {
 async function getPromptInjection(): Promise<Option.Option<string>> {
   const program = Effect.gen(function* () {
     const workflow = yield* WorkflowService
-    return yield* workflow.getSystemPromptInjection
+    return yield* workflow.getSystemPromptInjection()
   })
 
-  return Effect.runPromise(Effect.provide(program, workflowLayer))
+  return Effect.runPromise(Effect.provide(program, workflowLayer) as any)
 }
 
 /**
@@ -102,7 +103,7 @@ export const SpecCommand = cmd({
         const { mode, config } = await getCurrentModeDisplay()
         UI.println(UI.Style.TEXT_INFO_BOLD + "Current Workflow Mode:" + UI.Style.TEXT_NORMAL)
         UI.println("")
-        UI.println(`  Mode: ${mode === "spec" ? UI.Style.TEXT_SUCCESS_BOLD : UI.Style.TEXT_BOLD}${mode}${UI.Style.TEXT_NORMAL}`)
+        UI.println(`  Mode: ${mode === "spec" ? UI.Style.TEXT_SUCCESS_BOLD : UI.Style.TEXT_NORMAL_BOLD}${mode}${UI.Style.TEXT_NORMAL}`)
         UI.println(`  ${formatModeDescription(mode)}`)
         
         if (config.specFile) {
@@ -151,7 +152,7 @@ export const SpecCommand = cmd({
         })
         
         try {
-          const content = await Effect.runPromise(Effect.provide(program, workflowLayer))
+          const content = await Effect.runPromise(Effect.provide(program, workflowLayer) as any)
           UI.println("")
           UI.println(UI.Style.TEXT_DIM + "Spec loaded successfully." + UI.Style.TEXT_NORMAL)
           log.info("Spec file loaded", { filepath: specFile })
@@ -195,7 +196,7 @@ export const VibeCommand = cmd({
         const { mode, config } = await getCurrentModeDisplay()
         UI.println(UI.Style.TEXT_INFO_BOLD + "Current Workflow Mode:" + UI.Style.TEXT_NORMAL)
         UI.println("")
-        UI.println(`  Mode: ${mode === "vibe" ? UI.Style.TEXT_SUCCESS_BOLD : UI.Style.TEXT_BOLD}${mode}${UI.Style.TEXT_NORMAL}`)
+        UI.println(`  Mode: ${mode === "vibe" ? UI.Style.TEXT_SUCCESS_BOLD : UI.Style.TEXT_NORMAL_BOLD}${mode}${UI.Style.TEXT_NORMAL}`)
         UI.println(`  ${formatModeDescription(mode)}`)
         
         UI.println("")

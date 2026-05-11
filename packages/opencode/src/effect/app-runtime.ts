@@ -49,15 +49,18 @@ import { SessionShare } from "@/share/session"
 import { Npm } from "@opencode-ai/core/npm"
 import { memoMap } from "@opencode-ai/core/effect/memo-map"
 
-export const AppLayer = Layer.mergeAll(
+const sharedDeps = Layer.mergeAll(
   Npm.defaultLayer,
   AppFileSystem.defaultLayer,
   Bus.defaultLayer,
   Auth.defaultLayer,
-  Account.defaultLayer,
   Config.defaultLayer,
   Git.defaultLayer,
   Ripgrep.defaultLayer,
+)
+
+export const AppLayer = Layer.mergeAll(
+  sharedDeps,
   File.defaultLayer,
   FileWatcher.defaultLayer,
   Storage.defaultLayer,
@@ -65,6 +68,7 @@ export const AppLayer = Layer.mergeAll(
   Plugin.defaultLayer,
   Provider.defaultLayer,
   ProviderAuth.defaultLayer,
+  Account.defaultLayer,
   Agent.defaultLayer,
   Skill.defaultLayer,
   Discovery.defaultLayer,
@@ -95,9 +99,12 @@ export const AppLayer = Layer.mergeAll(
   Installation.defaultLayer,
   ShareNext.defaultLayer,
   SessionShare.defaultLayer,
-).pipe(Layer.provideMerge(Observability.layer))
+).pipe(
+  Layer.provide(sharedDeps),
+  Layer.provideMerge(Observability.layer),
+)
 
-const rt = ManagedRuntime.make(AppLayer, { memoMap })
+const rt = ManagedRuntime.make(AppLayer as Layer.Layer<any, any, never>, { memoMap })
 type Runtime = Pick<typeof rt, "runSync" | "runPromise" | "runPromiseExit" | "runFork" | "runCallback" | "dispose">
 const wrap = (effect: Parameters<typeof rt.runSync>[0]) => attach(effect as never) as never
 

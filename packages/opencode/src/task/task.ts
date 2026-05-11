@@ -1,7 +1,6 @@
 import { Context, Effect, Schema, Layer } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import path from "path"
-import { FileSystem } from "@effect/platform/FileSystem"
 
 const log = Log.create({ service: "task" })
 const TASKS_FILE = ".opencode/tasks.json"
@@ -10,10 +9,10 @@ const TASKS_FILE = ".opencode/tasks.json"
 // Schema Definitions
 // ============================================================================
 
-export const TaskStatus = Schema.Literals("pending", "in_progress", "completed")
+export const TaskStatus = Schema.Literals(["pending", "in_progress", "completed"])
 export type TaskStatus = Schema.Schema.Type<typeof TaskStatus>
 
-export const TaskItem = Schema.Class<TaskItem>("TaskItem")({
+export class TaskItem extends Schema.Class<TaskItem>("TaskItem")({
   id: Schema.String,
   subject: Schema.String,
   description: Schema.String,
@@ -23,9 +22,7 @@ export const TaskItem = Schema.Class<TaskItem>("TaskItem")({
   blockedBy: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
   createdAt: Schema.Number,
   updatedAt: Schema.Number,
-})
-
-export interface TaskItem extends Schema.Schema.Type<typeof TaskItem> {}
+}) {}
 
 export const TaskSummary = Schema.Struct({
   total: Schema.Number,
@@ -40,22 +37,21 @@ export type TaskSummary = Schema.Schema.Type<typeof TaskSummary>
 // Errors
 // ============================================================================
 
-export class CircularDependencyError extends Schema.TaggedError<CircularDependencyError>("CircularDependencyError")(
-  "CircularDependencyError",
-  { message: Schema.String }
-) {}
+export class CircularDependencyError extends Schema.TaggedErrorClass<CircularDependencyError>()("CircularDependencyError", {
+  message: Schema.String,
+}) {}
 
-export class TaskNotFoundError extends Schema.TaggedError<TaskNotFoundError>("TaskNotFoundError")(
-  "TaskNotFoundError",
-  { id: Schema.String }
-) {}
+export class TaskNotFoundError extends Schema.TaggedErrorClass<TaskNotFoundError>()("TaskNotFoundError", {
+  id: Schema.String,
+}) {}
 
-export class InvalidStatusTransitionError extends Schema.TaggedError<InvalidStatusTransitionError>(
-  "InvalidStatusTransitionError"
-)(
-  "InvalidStatusTransitionError",
-  { id: Schema.String, from: TaskStatus, to: TaskStatus }
-) {}
+export class InvalidStatusTransitionError extends Schema.TaggedErrorClass<InvalidStatusTransitionError>()("InvalidStatusTransitionError", {
+  id: Schema.String,
+  from: TaskStatus,
+  to: TaskStatus,
+}) {}
+
+export type TaskError = CircularDependencyError | TaskNotFoundError | InvalidStatusTransitionError
 
 // ============================================================================
 // State
@@ -81,7 +77,7 @@ const serializeTasks = (tasks: Map<string, TaskItem>): string =>
   JSON.stringify(
     Array.from(tasks.values()).sort((a, b) => a.createdAt - b.createdAt),
     null,
-    2
+    2,
   )
 
 const deserializeTasks = (data: string): TaskItem[] => {
@@ -132,16 +128,16 @@ const canStartTask = (task: TaskItem, state: TaskState): boolean => {
 // ============================================================================
 
 export interface Interface {
-  readonly create: (task: Omit<TaskItem, "id" | "status" | "createdAt" | "updatedAt">) => Effect.Effect<TaskItem>
-  readonly updateStatus: (id: string, status: TaskStatus) => Effect.Effect<void>
+  readonly create: (task: Omit<TaskItem, "id" | "status" | "createdAt" | "updatedAt">) => Effect.Effect<TaskItem, TaskError>
+  readonly updateStatus: (id: string, status: TaskStatus) => Effect.Effect<void, TaskError>
   readonly list: () => Effect.Effect<ReadonlyArray<TaskItem>>
-  readonly get: (id: string) => Effect.Effect<TaskItem>
-  readonly canStart: (id: string) => Effect.Effect<boolean>
+  readonly get: (id: string) => Effect.Effect<TaskItem, TaskError>
+  readonly canStart: (id: string) => Effect.Effect<boolean, TaskError>
   readonly summary: () => Effect.Effect<TaskSummary>
   readonly activeTask: () => Effect.Effect<TaskItem | undefined>
-  readonly delete: (id: string) => Effect.Effect<void>
-  readonly addDependency: (taskId: string, dependsOnId: string) => Effect.Effect<void>
-  readonly removeDependency: (taskId: string, dependsOnId: string) => Effect.Effect<void>
+  readonly delete: (id: string) => Effect.Effect<void, TaskError>
+  readonly addDependency: (taskId: string, dependsOnId: string) => Effect.Effect<void, TaskError>
+  readonly removeDependency: (taskId: string, dependsOnId: string) => Effect.Effect<void, TaskError>
   readonly initialize: (projectRoot: string) => Effect.Effect<void>
   readonly saveToFile: () => Effect.Effect<void>
   readonly loadFromFile: () => Effect.Effect<void>
@@ -185,7 +181,6 @@ const make = Effect.gen(function* () {
 
       const currentStatus = task.status
 
-      // Validate status transitions
       if (currentStatus === "completed" && status !== "completed") {
         return yield* new InvalidStatusTransitionError({ id, from: currentStatus, to: status })
       }
@@ -266,7 +261,6 @@ const make = Effect.gen(function* () {
         return yield* new TaskNotFoundError({ id })
       }
 
-      // Remove this task from other tasks' dependencies
       for (const otherTask of state.tasks.values()) {
         if (otherTask.blockedBy?.includes(id)) {
           const updated = new TaskItem({
@@ -306,7 +300,6 @@ const make = Effect.gen(function* () {
         return yield* new TaskNotFoundError({ id: dependsOnId })
       }
 
-      // Check for circular dependency
       const newBlocks = [...(task.blocks || []), dependsOnId]
       if (hasCycle(taskId, newBlocks, state)) {
         return yield* new CircularDependencyError({ message: "Adding this dependency would create a cycle" })
@@ -378,22 +371,21 @@ const make = Effect.gen(function* () {
       const filePath = path.join(state.projectRoot, TASKS_FILE)
       const data = serializeTasks(state.tasks)
 
-      try {
-        // Ensure .opencode directory exists
-        const opencodeDir = path.join(state.projectRoot, ".opencode")
-        yield* Effect.promise(() =>
-          Bun.file(opencodeDir).stat().catch(() => {
-            return Bun.write(opencodeDir, "")
-          })
+      const opencodeDir = path.join(state.projectRoot, ".opencode")
+      yield* Effect.promise(() =>
+        Bun.file(opencodeDir).stat().catch(() =>
+          Bun.write(opencodeDir, "")
         )
+      )
 
-        yield* Effect.promise(() => Bun.write(filePath, data))
-        log.debug("Tasks saved to file", { filePath, count: state.tasks.size })
-      } catch (error) {
+      yield* Effect.promise(() => Bun.write(filePath, data))
+      log.debug("Tasks saved to file", { filePath, count: state.tasks.size })
+    }).pipe(
+      Effect.catch((error) => {
         log.error("Failed to save tasks to file", { error: String(error) })
-        // Don't fail the operation if file save fails
-      }
-    })
+        return Effect.void
+      }),
+    )
 
   const loadFromFile = () =>
     Effect.gen(function* () {
@@ -404,39 +396,38 @@ const make = Effect.gen(function* () {
 
       const filePath = path.join(state.projectRoot, TASKS_FILE)
 
-      try {
-        const file = Bun.file(filePath)
-        const exists = yield* Effect.promise(() =>
-          file.exists().catch(() => false)
-        )
+      const file = Bun.file(filePath)
+      const exists = yield* Effect.promise(() =>
+        file.exists().catch(() => false)
+      )
 
-        if (!exists) {
-          log.debug("No existing tasks file found", { filePath })
-          return
-        }
-
-        const data = yield* Effect.promise(() => file.text())
-        const tasks = deserializeTasks(data)
-
-        // Clear existing tasks and load from file
-        state.tasks.clear()
-        state.activeTaskId = undefined
-
-        for (const task of tasks) {
-          state.tasks.set(task.id, task)
-          if (task.status === "in_progress") {
-            state.activeTaskId = task.id
-          }
-        }
-
-        log.debug("Tasks loaded from file", { filePath, count: tasks.length })
-      } catch (error) {
-        log.error("Failed to load tasks from file", { error: String(error) })
-        // Start with empty tasks if file is corrupted
-        state.tasks.clear()
-        state.activeTaskId = undefined
+      if (!exists) {
+        log.debug("No existing tasks file found", { filePath })
+        return
       }
-    })
+
+      const data = yield* Effect.promise(() => file.text())
+      const tasks = deserializeTasks(data)
+
+      state.tasks.clear()
+      state.activeTaskId = undefined
+
+      for (const task of tasks) {
+        state.tasks.set(task.id, task)
+        if (task.status === "in_progress") {
+          state.activeTaskId = task.id
+        }
+      }
+
+      log.debug("Tasks loaded from file", { filePath, count: tasks.length })
+    }).pipe(
+      Effect.catch((error) => {
+        log.error("Failed to load tasks from file", { error: String(error) })
+        state.tasks.clear()
+        state.activeTaskId = undefined
+        return Effect.void
+      }),
+    )
 
   // Auto-save after state changes
   const createWithSave = (task: Omit<TaskItem, "id" | "status" | "createdAt" | "updatedAt">) =>

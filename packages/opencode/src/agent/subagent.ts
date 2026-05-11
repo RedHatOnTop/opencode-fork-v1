@@ -3,11 +3,15 @@
  *
  * Manages specialized sub-agents with scoped tool permissions:
  * - Orchestrator: Primary agent with full access
- * - Security Auditor: Read-only security analysis
- * - Code Reviewer: Read and suggest (edit requires approval)
- * - Test Writer: Test generation capabilities
- * - Docs Writer: Documentation generation
- * - Debugger: Debugging assistance
+ * - Planner: Planning specialist (read + bash only)
+ * - Code Reviewer: Code quality analysis (read + ask for edits)
+ * - Security Reviewer: Security audit specialist (read + ask for edits)
+ * - Build Error Resolver: Build failure diagnosis (read + edit + bash)
+ * - Refactor Cleaner: Refactoring specialist (read + edit, no bash)
+ *
+ * NOTE: This uses the 5 sub-agent design from opencode-enhanced spec.
+ * Previous agents (security-auditor, test-writer, docs-writer, debugger) have been
+ * consolidated into the new structure.
  */
 
 import { Schema, Context, Effect, Layer, Option } from "effect"
@@ -17,22 +21,22 @@ import { Agent } from "./agent"
 const log = Log.create({ service: "subagent" })
 
 /**
- * Sub-agent types
+ * Sub-agent types (5-agent model)
  */
-export const SubAgentType = Schema.Literal(
+export const SubAgentType = Schema.Literals([
   "orchestrator",
-  "security-auditor",
+  "planner",
   "code-reviewer",
-  "test-writer",
-  "docs-writer",
-  "debugger"
-)
-export type SubAgentType = "orchestrator" | "security-auditor" | "code-reviewer" | "test-writer" | "docs-writer" | "debugger"
+  "security-reviewer",
+  "build-error-resolver",
+  "refactor-cleaner",
+])
+export type SubAgentType = "orchestrator" | "planner" | "code-reviewer" | "security-reviewer" | "build-error-resolver" | "refactor-cleaner"
 
 /**
  * Tool action permissions
  */
-export const ToolAction = Schema.Literal("allow", "deny", "ask")
+export const ToolAction = Schema.Literals(["allow", "deny", "ask"])
 export type ToolAction = Schema.Schema.Type<typeof ToolAction>
 
 /**
@@ -81,7 +85,7 @@ export interface Interface {
  */
 export class Service extends Context.Service<Service, Interface>()("@opencode/SubAgent") {}
 
-// Agent definitions with scoped permissions
+// Agent definitions with scoped permissions (5-agent model)
 const AGENT_DEFINITIONS: Record<SubAgentType, SubAgentDefinition> = {
   orchestrator: {
     type: "orchestrator",
@@ -98,44 +102,50 @@ const AGENT_DEFINITIONS: Record<SubAgentType, SubAgentDefinition> = {
       grep: "allow",
       task: "allow",
     },
-    activationKeywords: [], // Always active
+    activationKeywords: [],
   },
-  "security-auditor": {
-    type: "security-auditor",
-    name: "Security Auditor",
-    description: "Specialized agent for security-sensitive operations and vulnerability analysis",
-    markdownFile: ".opencode/agents/security-auditor.md",
+  planner: {
+    type: "planner",
+    name: "Planner",
+    description: "Planning specialist that breaks down tasks, designs architecture, and creates strategic roadmaps",
+    markdownFile: ".opencode/agents/planner.md",
     permissions: {
       read: "allow",
-      edit: "ask", // Requires orchestrator approval
+      edit: "deny",
       create: "deny",
       delete: "deny",
-      bash: "deny", // Security risk
+      bash: "allow",
       glob: "allow",
       grep: "allow",
-      task: "deny",
+      task: "allow",
     },
     activationKeywords: [
-      "security audit",
-      "vulnerability",
-      "authentication",
-      "authorization",
-      "sanitize",
-      "encrypt",
-      "XSS",
-      "SQL injection",
-      "security",
-      "exploit",
+      "plan",
+      "planning",
+      "architecture",
+      "design system",
+      "roadmap",
+      "strategy",
+      "break down",
+      "decompose",
+      "structure",
+      "organize",
+      "milestone",
+      "phase",
+      "work breakdown",
+      "WBS",
+      "technical design",
+      "system design",
     ],
   },
   "code-reviewer": {
     type: "code-reviewer",
     name: "Code Reviewer",
-    description: "Specialized agent for code quality review and refactoring suggestions",
+    description: "Code quality review specialist that analyzes patterns, maintainability, and suggests improvements",
     markdownFile: ".opencode/agents/code-reviewer.md",
     permissions: {
       read: "allow",
-      edit: "ask", // Requires orchestrator approval
+      edit: "ask",
       create: "ask",
       delete: "deny",
       bash: "deny",
@@ -145,24 +155,31 @@ const AGENT_DEFINITIONS: Record<SubAgentType, SubAgentDefinition> = {
     },
     activationKeywords: [
       "code review",
-      "refactor",
+      "review code",
+      "review this",
+      "review my",
+      "quality check",
+      "maintainability",
       "clean code",
       "design pattern",
-      "maintainability",
-      "performance",
-      "review",
-      "quality",
+      "anti-pattern",
+      "code smell",
+      "refactor suggestion",
+      "improve code",
+      "best practice",
+      "PR review",
+      "pull request review",
     ],
   },
-  "test-writer": {
-    type: "test-writer",
-    name: "Test Writer",
-    description: "Specialized agent for test case generation and coverage analysis",
-    markdownFile: ".opencode/agents/test-writer.md",
+  "security-reviewer": {
+    type: "security-reviewer",
+    name: "Security Reviewer",
+    description: "Security audit specialist that analyzes vulnerabilities, compliance, and threat models",
+    markdownFile: ".opencode/agents/security-reviewer.md",
     permissions: {
       read: "allow",
       edit: "ask",
-      create: "allow", // Can create test files
+      create: "deny",
       delete: "deny",
       bash: "deny",
       glob: "allow",
@@ -170,67 +187,94 @@ const AGENT_DEFINITIONS: Record<SubAgentType, SubAgentDefinition> = {
       task: "deny",
     },
     activationKeywords: [
-      "test",
-      "testing",
-      "coverage",
-      "unit test",
-      "integration test",
-      "TDD",
-      "test case",
-      "mock",
+      "security audit",
+      "security review",
+      "vulnerability",
+      "authentication",
+      "authorization",
+      "sanitize",
+      "encrypt",
+      "XSS",
+      "CSRF",
+      "SQL injection",
+      "security",
+      "exploit",
+      "CVE",
+      "OWASP",
+      "penetration test",
+      "threat model",
+      "compliance",
+      "GDPR",
+      "SOC2",
     ],
   },
-  "docs-writer": {
-    type: "docs-writer",
-    name: "Docs Writer",
-    description: "Specialized agent for documentation generation and API documentation",
-    markdownFile: ".opencode/agents/docs-writer.md",
+  "build-error-resolver": {
+    type: "build-error-resolver",
+    name: "Build Error Resolver",
+    description: "Build error specialist that diagnoses and fixes compilation, CI/CD, and deployment failures",
+    markdownFile: ".opencode/agents/build-error-resolver.md",
     permissions: {
       read: "allow",
-      edit: "ask",
-      create: "allow", // Can create doc files
-      delete: "deny",
-      bash: "deny",
-      glob: "allow",
-      grep: "allow",
-      task: "deny",
-    },
-    activationKeywords: [
-      "documentation",
-      "docs",
-      "README",
-      "API docs",
-      "JSDoc",
-      "comment",
-      "explain",
-      "tutorial",
-    ],
-  },
-  debugger: {
-    type: "debugger",
-    name: "Debugger",
-    description: "Specialized agent for debugging assistance and error analysis",
-    markdownFile: ".opencode/agents/debugger.md",
-    permissions: {
-      read: "allow",
-      edit: "ask",
+      edit: "allow",
       create: "ask",
       delete: "deny",
-      bash: "allow", // May need to run debug commands
+      bash: "allow",
       glob: "allow",
       grep: "allow",
       task: "deny",
     },
     activationKeywords: [
-      "debug",
-      "bug",
-      "error",
-      "exception",
-      "crash",
-      "trace",
-      "stack trace",
-      "breakpoint",
-      "log",
+      "build error",
+      "compilation error",
+      "CI/CD failure",
+      "deployment failed",
+      "type error",
+      "lint error",
+      "webpack error",
+      "vite error",
+      "docker build failed",
+      "npm error",
+      "yarn error",
+      "pnpm error",
+      "test failed",
+      "pipeline failed",
+      "build failed",
+      "cannot compile",
+      "typescript error",
+    ],
+  },
+  "refactor-cleaner": {
+    type: "refactor-cleaner",
+    name: "Refactor Cleaner",
+    description: "Refactoring specialist that cleans up code, reduces technical debt, and improves code structure",
+    markdownFile: ".opencode/agents/refactor-cleaner.md",
+    permissions: {
+      read: "allow",
+      edit: "allow",
+      create: "ask",
+      delete: "ask",
+      bash: "deny",
+      glob: "allow",
+      grep: "allow",
+      task: "deny",
+    },
+    activationKeywords: [
+      "refactor",
+      "clean up",
+      "cleanup",
+      "technical debt",
+      "deduplicate",
+      "simplify",
+      "rename",
+      "extract method",
+      "extract class",
+      "inline method",
+      "move method",
+      "polish",
+      "tidy up",
+      "restructure",
+      "improve structure",
+      "remove duplication",
     ],
   },
 }
@@ -243,24 +287,18 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const getAgent = Effect.fn("SubAgent.getAgent")(
       function* (type: SubAgentType) {
-        const agent = AGENT_DEFINITIONS[type]
-        if (!agent) {
-          return yield* Effect.fail(new Error(`Unknown sub-agent type: ${type}`))
-        }
-        return agent
+        return AGENT_DEFINITIONS[type]
       }
     )
 
-    const getAllAgents = Effect.fn("SubAgent.getAllAgents")(
-      function* () {
-        return Object.values(AGENT_DEFINITIONS)
-      }
+    const getAllAgents = Effect.sync(() =>
+      Object.values(AGENT_DEFINITIONS) as ReadonlyArray<SubAgentDefinition>
     )
 
     const findAgentByKeyword = Effect.fn("SubAgent.findAgentByKeyword")(
       function* (text: string) {
         const lowerText = text.toLowerCase()
-        
+
         for (const [type, definition] of Object.entries(AGENT_DEFINITIONS)) {
           if (definition.activationKeywords.some((keyword) =>
             lowerText.includes(keyword.toLowerCase())
@@ -268,7 +306,7 @@ export const layer = Layer.effect(
             return Option.some(type as SubAgentType)
           }
         }
-        
+
         return Option.none()
       }
     )
@@ -283,40 +321,55 @@ export const layer = Layer.effect(
     const getSystemPromptInjection = Effect.fn("SubAgent.getSystemPromptInjection")(
       function* (agentType: SubAgentType) {
         const agent = yield* getAgent(agentType)
-        
-        // In production, this would load the markdown file content
-        // For MVP, return a placeholder with agent info
+
         if (agentType === "orchestrator") {
-          return Option.none() // Orchestrator uses base system prompt
+          return Option.none()
         }
 
-        const injection = `
-# SUB-AGENT MODE: ${agent.name.toUpperCase()}
+        const cwd = process.cwd()
+        const markdownContent = yield* Effect.tryPromise(() =>
+          import("fs/promises").then((fs) =>
+            import("path").then((path) =>
+              fs.readFile(path.resolve(cwd, agent.markdownFile), "utf-8")
+            )
+          )
+        ).pipe(Effect.orElseSucceed(() => undefined as string | undefined))
 
-You are operating as the ${agent.name} sub-agent with scoped permissions.
+        const permissionLines = Object.entries(agent.permissions)
+          .map(([tool, action]) => `- ${tool}: ${action}`)
+          .join("\n")
 
-## Your Role
-${agent.description}
+        const parts: string[] = []
+        parts.push(`# SUB-AGENT MODE: ${agent.name.toUpperCase()}`)
+        parts.push("")
+        parts.push(`You are operating as the ${agent.name} sub-agent with scoped permissions.`)
+        parts.push("")
 
-## Tool Permissions
-- read: ${agent.permissions.read}
-- edit: ${agent.permissions.edit}
-- create: ${agent.permissions.create}
-- delete: ${agent.permissions.delete}
-- bash: ${agent.permissions.bash}
-- glob: ${agent.permissions.glob}
-- grep: ${agent.permissions.grep}
-- task: ${agent.permissions.task}
+        if (markdownContent) {
+          const contentWithoutFrontmatter = markdownContent
+            .replace(/^---\n[\s\S]*?\n---\n/, "")
+            .trim()
+          if (contentWithoutFrontmatter) {
+            parts.push(contentWithoutFrontmatter)
+            parts.push("")
+          }
+        } else {
+          parts.push("## Your Role")
+          parts.push(agent.description)
+          parts.push("")
+        }
 
-## Guidelines
-1. Operate within your scoped permissions
-2. Request orchestrator approval for restricted actions
-3. Use @orchestrator to escalate when needed
-4. Provide specialized expertise for your domain
+        parts.push("## Tool Permissions")
+        parts.push(permissionLines)
+        parts.push("")
+        parts.push("## Guidelines")
+        parts.push("1. Operate within your scoped permissions")
+        parts.push("2. Request orchestrator approval for restricted actions via @orchestrator")
+        parts.push("3. Provide specialized expertise for your domain")
+        parts.push("")
+        parts.push(`Agent Type: ${agentType}`)
 
-Agent Type: ${agentType}
-`
-        return Option.some(injection)
+        return Option.some(parts.join("\n"))
       }
     )
 
@@ -342,7 +395,7 @@ export const defaultLayer = layer
 /**
  * Helper: Get agent by keyword
  */
-export function findAgentByKeyword(text: string): Effect.Effect<Option.Option<SubAgentType>> {
+export function findAgentByKeyword(text: string): Effect.Effect<Option.Option<SubAgentType>, never, Service> {
   return Effect.gen(function* () {
     const service = yield* Service
     return yield* service.findAgentByKeyword(text)
@@ -355,7 +408,7 @@ export function findAgentByKeyword(text: string): Effect.Effect<Option.Option<Su
 export function isToolAllowed(
   agentType: SubAgentType,
   tool: keyof ToolPermissions
-): Effect.Effect<boolean> {
+): Effect.Effect<boolean, never, Service> {
   return Effect.gen(function* () {
     const service = yield* Service
     const permission = yield* service.checkToolPermission(agentType, tool)
@@ -369,10 +422,12 @@ export function isToolAllowed(
 export function isToolAsk(
   agentType: SubAgentType,
   tool: keyof ToolPermissions
-): Effect.Effect<boolean> {
+): Effect.Effect<boolean, never, Service> {
   return Effect.gen(function* () {
     const service = yield* Service
     const permission = yield* service.checkToolPermission(agentType, tool)
     return permission === "ask"
   })
 }
+
+export * as SubAgent from "./subagent"

@@ -1,23 +1,28 @@
 /**
  * Memory Manager - Long-term Memory System
  *
- * Manages long-term memory with project and global scope support:
- * - Project scope: Memory specific to the current project
- * - Global scope: Memory shared across all projects
+ * Manages long-term memory with 3-tier scope support:
+ * - Global scope: Memory shared across all projects (~/.opencode/memory/)
+ * - Project scope: Memory specific to the current project (.opencode/memory/)
+ * - Session scope: Memory isolated per session, survives session end
  * - Memory CRUD operations
  * - Memory retrieval based on context
+ *
+ * Spec ref: opencode-enhanced R22
  */
 
 import { Schema, Context, Effect, Layer, Option } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { ulid } from "ulid"
+import { Instance } from "../project/instance"
+import { Service as PersistenceService, defaultLayer as persistenceLayer } from "./persistence"
 
 const log = Log.create({ service: "memory" })
 
 /**
- * Memory scope types
+ * Memory scope types (3-tier: global, project, session)
  */
-export const MemoryScope = Schema.Literal("project", "global")
+export const MemoryScope = Schema.Union([Schema.Literal("project"), Schema.Literal("global"), Schema.Literal("session")])
 export type MemoryScope = Schema.Schema.Type<typeof MemoryScope>
 
 /**
@@ -58,6 +63,10 @@ export interface Interface {
   readonly getByTags: (tags: string[], scope?: MemoryScope) => Effect.Effect<ReadonlyArray<MemoryEntry>>
   readonly incrementAccess: (id: string) => Effect.Effect<Option.Option<MemoryEntry>>
   readonly getSystemPromptInjection: (context?: string) => Effect.Effect<Option.Option<string>>
+  // Session-scoped memory operations (R22)
+  readonly setSessionId: (sessionId: string) => Effect.Effect<void>
+  readonly getSessionMemory: () => Effect.Effect<ReadonlyArray<MemoryEntry>>
+  readonly clearSessionMemory: () => Effect.Effect<void>
 }
 
 /**
@@ -68,6 +77,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Me
 // In-memory storage (MVP - can be extended to SQLite)
 interface State {
   entries: Map<string, MemoryEntry>
+  activeSessionId?: string
 }
 
 /**
@@ -152,12 +162,45 @@ function formatMemoryForPrompt(entries: MemoryEntry[], context?: string): string
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const persistence = yield* PersistenceService
+    const getProjectRoot = () => Instance.directory
     const state: State = { entries: new Map() }
+    let loaded = false
+
+    const persistScope = Effect.fn("Memory.persistScope")(function* (scope: MemoryScope) {
+      const entries = Array.from(state.entries.values()).filter((e) => e.scope === scope)
+      if (entries.length > 0) {
+        yield* persistence.persist(entries, scope, getProjectRoot(), state.activeSessionId)
+      }
+    })
+
+    const loadScope = Effect.fn("Memory.loadScope")(function* (scope: MemoryScope) {
+      const items = yield* persistence.load(scope, getProjectRoot(), state.activeSessionId)
+      for (const entry of items) {
+        state.entries.set(entry.id, entry)
+      }
+      if (items.length > 0) {
+        log.info("Memory loaded from disk", { scope, count: items.length })
+      }
+    })
+
+    const ensureLoaded = Effect.fn("Memory.ensureLoaded")(function* () {
+      if (loaded) return
+      loaded = true
+      yield* loadScope("global").pipe(Effect.catch(() => Effect.succeed(undefined)))
+      yield* loadScope("project").pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (state.activeSessionId) {
+        yield* loadScope("session").pipe(Effect.catch(() => Effect.succeed(undefined)))
+      }
+    })
 
     const add = Effect.fn("Memory.add")(
       function* (entry: Omit<MemoryEntry, "id" | "createdAt" | "updatedAt" | "accessCount" | "lastAccessedAt">) {
+        yield* ensureLoaded()
         const memoryEntry = createMemoryEntry(entry)
         state.entries.set(memoryEntry.id, memoryEntry)
+
+        yield* persistScope(memoryEntry.scope)
 
         log.info("Memory entry added", { id: memoryEntry.id, key: memoryEntry.key, scope: memoryEntry.scope })
         return memoryEntry
@@ -166,6 +209,7 @@ export const layer = Layer.effect(
 
     const get = Effect.fn("Memory.get")(
       function* (id: string) {
+        yield* ensureLoaded()
         const entry = state.entries.get(id)
         if (!entry) {
           return Option.none()
@@ -176,6 +220,7 @@ export const layer = Layer.effect(
 
     const getByKey = Effect.fn("Memory.getByKey")(
       function* (key: string, scope: MemoryScope) {
+        yield* ensureLoaded()
         const entry = Array.from(state.entries.values()).find(
           (e) => e.key === key && e.scope === scope
         )
@@ -200,6 +245,8 @@ export const layer = Layer.effect(
         }
         state.entries.set(id, updated)
 
+        yield* persistScope(updated.scope)
+
         log.info("Memory entry updated", { id, key: updated.key })
         return Option.some(updated)
       }
@@ -207,9 +254,13 @@ export const layer = Layer.effect(
 
     const remove = Effect.fn("Memory.remove")(
       function* (id: string) {
+        const entry = state.entries.get(id)
         const existed = state.entries.has(id)
         if (existed) {
           state.entries.delete(id)
+          if (entry) {
+            yield* persistScope(entry.scope).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          }
           log.info("Memory entry removed", { id })
         }
         return existed
@@ -218,6 +269,7 @@ export const layer = Layer.effect(
 
     const list = Effect.fn("Memory.list")(
       function* (scope?: MemoryScope) {
+        yield* ensureLoaded()
         const entries = Array.from(state.entries.values())
         if (scope) {
           return entries.filter((e) => e.scope === scope)
@@ -228,6 +280,7 @@ export const layer = Layer.effect(
 
     const search = Effect.fn("Memory.search")(
       function* (query: string, scope?: MemoryScope) {
+        yield* ensureLoaded()
         const entries = Array.from(state.entries.values())
         const filtered = scope ? entries.filter((e) => e.scope === scope) : entries
 
@@ -246,6 +299,7 @@ export const layer = Layer.effect(
 
     const getByTags = Effect.fn("Memory.getByTags")(
       function* (tags: string[], scope?: MemoryScope) {
+        yield* ensureLoaded()
         const entries = Array.from(state.entries.values())
         const filtered = scope ? entries.filter((e) => e.scope === scope) : entries
 
@@ -275,6 +329,7 @@ export const layer = Layer.effect(
 
     const getSystemPromptInjection = Effect.fn("Memory.getSystemPromptInjection")(
       function* (context?: string) {
+        yield* ensureLoaded()
         // Search for relevant memories based on context
         if (!context || context.trim().length === 0) {
           return Option.none()
@@ -294,6 +349,31 @@ export const layer = Layer.effect(
       }
     )
 
+    // -------------------------------------------------------------------
+    // Session-scoped memory operations (R22)
+    // -------------------------------------------------------------------
+
+    const setSessionId = Effect.fn("Memory.setSessionId")(function* (sessionId: string) {
+      state.activeSessionId = sessionId
+      log.info("Session ID set for memory", { sessionId })
+    })
+
+    const getSessionMemory = Effect.fn("Memory.getSessionMemory")(function* () {
+      return Array.from(state.entries.values()).filter((e) => e.scope === "session")
+    })
+
+    const clearSessionMemory = Effect.fn("Memory.clearSessionMemory")(function* () {
+      const sessionEntries = Array.from(state.entries.values())
+        .filter((e) => e.scope === "session")
+        .map((e) => e.id)
+
+      for (const id of sessionEntries) {
+        state.entries.delete(id)
+      }
+
+      log.info("Session memory cleared", { count: sessionEntries.length })
+    })
+
     return Service.of({
       add,
       get,
@@ -305,11 +385,16 @@ export const layer = Layer.effect(
       getByTags,
       incrementAccess,
       getSystemPromptInjection,
+      setSessionId,
+      getSessionMemory,
+      clearSessionMemory,
     })
   })
 )
 
-export const defaultLayer = layer
+export const defaultLayer = layer.pipe(
+  Layer.provide(persistenceLayer),
+)
 
 /**
  * Helper: Add project memory
@@ -318,7 +403,7 @@ export function addProjectMemory(
   key: string,
   value: string,
   tags: string[] = []
-): Effect.Effect<MemoryEntry> {
+): Effect.Effect<MemoryEntry, never, Service> {
   return Effect.gen(function* () {
     const service = yield* Service
     return yield* service.add({
@@ -337,11 +422,30 @@ export function addGlobalMemory(
   key: string,
   value: string,
   tags: string[] = []
-): Effect.Effect<MemoryEntry> {
+): Effect.Effect<MemoryEntry, never, Service> {
   return Effect.gen(function* () {
     const service = yield* Service
     return yield* service.add({
       scope: "global",
+      key,
+      value,
+      tags,
+    })
+  })
+}
+
+/**
+ * Helper: Add session memory
+ */
+export function addSessionMemory(
+  key: string,
+  value: string,
+  tags: string[] = []
+): Effect.Effect<MemoryEntry, never, Service> {
+  return Effect.gen(function* () {
+    const service = yield* Service
+    return yield* service.add({
+      scope: "session",
       key,
       value,
       tags,
@@ -355,9 +459,11 @@ export function addGlobalMemory(
 export function searchMemories(
   query: string,
   scope?: MemoryScope
-): Effect.Effect<ReadonlyArray<SearchResult>> {
+): Effect.Effect<ReadonlyArray<SearchResult>, never, Service> {
   return Effect.gen(function* () {
     const service = yield* Service
     return yield* service.search(query, scope)
   })
 }
+
+export * as Memory from "./memory"

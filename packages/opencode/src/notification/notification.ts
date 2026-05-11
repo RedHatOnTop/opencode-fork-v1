@@ -8,12 +8,12 @@ const log = Log.create({ service: "notification" })
 // Schema Definitions
 // ============================================================================
 
-export const NotificationType = Schema.Literals(
+export const NotificationType = Schema.Literals([
   "action_queue_item_added",
   "agent_blocked",
   "tasks_completed",
-  "error_recovery_failed"
-)
+  "error_recovery_failed",
+])
 export type NotificationType = Schema.Schema.Type<typeof NotificationType>
 
 export const NotificationConfig = Schema.Struct({

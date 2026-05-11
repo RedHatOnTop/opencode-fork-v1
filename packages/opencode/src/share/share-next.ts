@@ -287,7 +287,7 @@ export const layer = Layer.effect(
       )
 
       yield* sync(sessionID, [
-        { type: "session", data: info },
+        { type: "session", data: { ...info, permission: info.permission?.filter((r) => r.action !== "queue") } as SDK.Session },
         ...messages.map((item) => ({ type: "message" as const, data: item.info })),
         ...messages.flatMap((item) => item.parts.map((part) => ({ type: "part" as const, data: part }))),
         { type: "session_diff", data: diffs },

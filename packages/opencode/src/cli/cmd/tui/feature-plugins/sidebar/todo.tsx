@@ -7,8 +7,12 @@ const id = "internal:sidebar-todo"
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const [open, setOpen] = createSignal(true)
   const theme = () => props.api.theme.current
-  const list = createMemo(() => props.api.state.session.todo(props.session_id))
-  const show = createMemo(() => list().length > 0 && list().some((item) => item.status !== "completed"))
+  const list = createMemo(() => {
+    const raw = props.api.state.session.todo(props.session_id)
+    if (!Array.isArray(raw)) return []
+    return [...raw]
+  })
+  const show = createMemo(() => list().some((item) => item.status !== "completed"))
 
   return (
     <Show when={show()}>

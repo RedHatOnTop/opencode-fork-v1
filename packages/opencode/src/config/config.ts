@@ -247,9 +247,7 @@ export const Info = Schema.Struct({
     Schema.Struct({
       disable_paste_summary: Schema.optional(Schema.Boolean),
       batch_tool: Schema.optional(Schema.Boolean).annotate({ description: "Enable the batch tool" }),
-      openTelemetry: Schema.optional(Schema.Boolean).annotate({
-        description: "Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)",
-      }),
+
       primary_tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
         description: "Tools that should only be available to primary agents.",
       }),
@@ -258,6 +256,9 @@ export const Info = Schema.Struct({
       }),
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
+      }),
+      openTelemetry: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable OpenTelemetry tracing for LLM calls",
       }),
     }),
   ),
@@ -277,7 +278,7 @@ export const Info = Schema.Struct({
   ),
   // Approval Mode configuration (R5)
   approval_mode: Schema.optional(
-    Schema.Literal("strict", "default", "autopilot", "yolo").annotate({
+    Schema.Literals(["strict", "default", "autopilot", "yolo"]).annotate({
       description: "Approval mode for tool execution (default: 'default')",
     }),
   ),
@@ -303,6 +304,22 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
+  // Graphify knowledge graph integration
+  graphify: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable Graphify knowledge graph integration (default: false). Can also be enabled via OPENCODE_ENABLE_GRAPHIFY=1",
+      }),
+      auto_query: Schema.optional(Schema.Boolean).annotate({
+        description: "Automatically query the knowledge graph before answering architecture questions (default: true)",
+      }),
+      graph_path: Schema.optional(Schema.String).annotate({
+        description: "Custom path to graph.json relative to project root (default: graphify-out/graph.json)",
+      }),
+    }),
+  ).annotate({
+    description: "Graphify knowledge graph feature. Turn any folder of code, docs, papers, images, or videos into a queryable knowledge graph.",
+  }),
 })
   .annotate({ identifier: "Config" })
   .pipe(
@@ -709,7 +726,11 @@ export const layer = Layer.effect(
         }
 
         if (Flag.OPENCODE_PERMISSION) {
-          result.permission = mergeDeep(result.permission ?? {}, JSON.parse(Flag.OPENCODE_PERMISSION))
+          try {
+            result.permission = mergeDeep(result.permission ?? {}, JSON.parse(Flag.OPENCODE_PERMISSION))
+          } catch (e) {
+            log.error("invalid OPENCODE_PERMISSION env var", { error: String(e) })
+          }
         }
 
         if (result.tools) {
@@ -737,6 +758,8 @@ export const layer = Layer.effect(
         if (Flag.OPENCODE_DISABLE_PRUNE) {
           result.compaction = { ...result.compaction, prune: false }
         }
+
+        result.mcp = ConfigMCP.mergeBuiltinServers(result.mcp as Record<string, ConfigMCP.Info> | undefined) as any
 
         return {
           config: result,

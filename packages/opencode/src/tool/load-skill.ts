@@ -28,12 +28,16 @@ export const LoadSkillTool = Tool.define(
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          const agentType = ctx.agent
+
           // First check the registry for metadata
           const entry = yield* registry.get(params.name)
 
           if (!entry) {
             // Skill not in registry — try searching for similar skills
-            const searchResults = yield* registry.search(params.name, { limit: 5 })
+            const searchResults = agentType
+              ? yield* registry.searchForAgent(agentType, params.name, { limit: 5 })
+              : yield* registry.search(params.name, { limit: 5 })
 
             const suggestions = searchResults.length > 0
               ? [
@@ -48,7 +52,34 @@ export const LoadSkillTool = Tool.define(
             return {
               title: `Skill not found: ${params.name}`,
               output: [`Skill "${params.name}" not found in the registry.`, ...suggestions].join("\n"),
-              metadata: { found: false },
+              metadata: { found: false, accessDenied: false, agentType: agentType ?? "", contentLoaded: false as boolean, name: "" as string, tier: "" as string, tokenCount: 0, budgetUsed: 0, budgetLimit: 0 },
+            }
+          }
+
+          // Agent permission check: verify skill is accessible to current agent
+          if (agentType) {
+            const canLoad = yield* registry.canLoadSkill(params.name, agentType)
+            if (!canLoad) {
+              const alternatives = yield* registry.searchForAgent(agentType, params.name, { limit: 5 })
+              const altLines = alternatives.length > 0
+                ? [
+                    "",
+                    "Skills available to your agent role:",
+                    ...alternatives.map(
+                      (r) => `  - ${r.descriptor.name} [${r.descriptor.tier}] — ${r.descriptor.description}`,
+                    ),
+                  ]
+                : ["", "No similar skills available for your agent role."]
+
+              return {
+                title: `Skill access denied: ${params.name}`,
+                output: [
+                  `Skill "${params.name}" is not available to the ${agentType} agent.`,
+                  "This skill is outside your agent's skill profile scope.",
+                  ...altLines,
+                ].join("\n"),
+                metadata: { found: true, accessDenied: true, agentType, contentLoaded: false, name: entry.name, tier: entry.tier, tokenCount: 0, budgetUsed: 0, budgetLimit: 0 },
+              }
             }
           }
 
@@ -79,9 +110,14 @@ export const LoadSkillTool = Tool.define(
               ].join("\n"),
               metadata: {
                 found: true,
+                accessDenied: false,
+                agentType: agentType ?? "",
                 contentLoaded: false,
                 name: entry.name,
                 tier: entry.tier,
+                tokenCount: 0,
+                budgetUsed: 0,
+                budgetLimit: 0,
               },
             }
           }
@@ -130,6 +166,8 @@ export const LoadSkillTool = Tool.define(
             ].join("\n"),
             metadata: {
               found: true,
+              accessDenied: false,
+              agentType: agentType ?? "",
               contentLoaded: true,
               name: skillInfo.name,
               tier: entry.tier,

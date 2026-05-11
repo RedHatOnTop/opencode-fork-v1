@@ -26,12 +26,21 @@ export const BrowseSkillsTool = Tool.define(
             ? params.category.split(">").map((s: string) => s.trim()).filter((s: string) => s.length > 0)
             : undefined
 
-          const result = yield* registry.browse(pathParts)
+          const agentType = ctx.agent
+          let result = yield* registry.browse(pathParts)
 
-          // If category was specified but no results, suggest similar categories
+          if (agentType) {
+            const agentSkills = yield* registry.getSkillsForAgent(agentType)
+            const allowedIds = new Set(agentSkills.map((s) => s.skillId))
+            const filteredSkills = result.skills.filter((s) => allowedIds.has(s.name) || allowedIds.size === 0)
+            result = {
+              categories: result.categories,
+              skills: filteredSkills,
+            }
+          }
+
           if (params.category && result.categories.length === 0 && result.skills.length === 0) {
             const allEntries = yield* registry.all()
-            // Build a simple tree for suggestions
             const { buildCategoryTree } = yield* Effect.promise(() => import("../skill/category"))
             const tree = buildCategoryTree(Array.from(allEntries))
             const suggestions = suggestCategories(tree, params.category)
@@ -40,11 +49,16 @@ export const BrowseSkillsTool = Tool.define(
               title: `Category not found: ${params.category}`,
               output: [
                 `Category "${params.category}" not found.`,
+                agentType ? ` (filtered for ${agentType} agent)` : "",
                 "",
                 "Did you mean one of these?",
                 ...suggestions.map((s) => `  - ${s}`),
               ].join("\n"),
-              metadata: {},
+              metadata: {
+                categoryCount: 0,
+                skillCount: 0,
+                agentType,
+              },
             }
           }
 
@@ -71,12 +85,18 @@ export const BrowseSkillsTool = Tool.define(
             }
           }
 
+          if (agentType && result.skills.length === 0 && !params.category) {
+            lines.push("")
+            lines.push(`Showing categories only. Skills filtered for ${agentType} agent.`)
+          }
+
           return {
             title: params.category ? `Category: ${params.category}` : "Skill Categories",
             output: lines.join("\n"),
             metadata: {
               categoryCount: result.categories.length,
               skillCount: result.skills.length,
+              agentType,
             },
           }
         }).pipe(Effect.orDie),

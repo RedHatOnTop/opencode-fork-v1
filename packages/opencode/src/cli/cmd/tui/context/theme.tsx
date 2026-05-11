@@ -407,11 +407,15 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       renderer.clearPaletteCache()
       init()
     }
-    process.on("SIGUSR2", refresh)
+    if (process.platform !== "win32") {
+      process.on("SIGUSR2", refresh)
+    }
 
     onCleanup(() => {
       renderer.off(CliRenderEvents.THEME_MODE, handle)
-      process.off("SIGUSR2", refresh)
+      if (process.platform !== "win32") {
+        process.off("SIGUSR2", refresh)
+      }
     })
 
     const values = createMemo(() => {

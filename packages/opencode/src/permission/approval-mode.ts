@@ -13,7 +13,7 @@ import { Schema, Context, Effect, Layer } from "effect"
 /**
  * Approval Mode type
  */
-export const ApprovalMode = Schema.Literal("strict", "default", "autopilot", "yolo")
+export const ApprovalMode = Schema.Literals(["strict", "default", "autopilot", "yolo"])
 export type ApprovalMode = "strict" | "default" | "autopilot" | "yolo"
 
 /**

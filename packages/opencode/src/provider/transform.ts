@@ -310,8 +310,10 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
       if (part.type !== "file" && part.type !== "image") return part
 
       // Check for empty base64 image data
+      if (part.type === "image" && typeof part.image !== "string") return part
+
       if (part.type === "image") {
-        const imageStr = String(part.image)
+        const imageStr = part.image as string
         if (imageStr.startsWith("data:")) {
           const match = imageStr.match(/^data:([^;]+);base64,(.*)$/)
           if (match && (!match[2] || match[2].length === 0)) {
@@ -323,7 +325,7 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
         }
       }
 
-      const mime = part.type === "image" ? String(part.image).split(";")[0].replace("data:", "") : part.mediaType
+      const mime = part.type === "image" ? (part.image as string).split(";")[0].replace("data:", "") : part.mediaType
       const filename = part.type === "file" ? part.filename : undefined
       const modality = mimeToModality(mime)
       if (!modality) return part
@@ -1071,24 +1073,6 @@ export function maxOutputTokens(model: Provider.Model): number {
 }
 
 export function schema(model: Provider.Model, schema: JSONSchema.BaseSchema | JSONSchema7): JSONSchema7 {
-  /*
-  if (["openai", "azure"].includes(providerID)) {
-    if (schema.type === "object" && schema.properties) {
-      for (const [key, value] of Object.entries(schema.properties)) {
-        if (schema.required?.includes(key)) continue
-        schema.properties[key] = {
-          anyOf: [
-            value as JSONSchema.JSONSchema,
-            {
-              type: "null",
-            },
-          ],
-        }
-      }
-    }
-  }
-  */
-
   if (model.providerID === "moonshotai" || model.api.id.toLowerCase().includes("kimi")) {
     const sanitizeMoonshot = (obj: unknown): unknown => {
       if (obj === null || typeof obj !== "object") return obj
@@ -1184,6 +1168,83 @@ export function schema(model: Provider.Model, schema: JSONSchema.BaseSchema | JS
   }
 
   return schema as JSONSchema7
+}
+
+/**
+ * Convert generic thinking effort level to provider-specific options.
+ * This allows TUI users to control thinking effort directly.
+ */
+export function thinkingEffortOptions(
+  model: Provider.Model,
+  effort: string,
+): Record<string, any> {
+  const id = model.api.id.toLowerCase()
+
+  // OpenAI / GitHub Copilot / compatible providers
+  if (
+    model.providerID === "openai" ||
+    model.api.npm === "@ai-sdk/openai" ||
+    model.api.npm === "@ai-sdk/github-copilot"
+  ) {
+    return { reasoningEffort: effort }
+  }
+
+  // Google Gemini
+  if (model.providerID === "google" || id.includes("gemini")) {
+    // gemini-3 uses thinkingLevel, gemini-2.5 uses thinkingBudget
+    if (id.includes("gemini-3")) {
+      return { thinkingConfig: { thinkingLevel: effort } }
+    }
+    // Map effort to approximate token budgets for Gemini 2.5
+    const budgetMap: Record<string, number> = {
+      none: 0,
+      minimal: 1024,
+      low: 4096,
+      medium: 8192,
+      high: 16384,
+    }
+    return { thinkingConfig: { thinkingBudget: budgetMap[effort] ?? 0 } }
+  }
+
+  // Anthropic via various providers
+  if (
+    model.providerID === "anthropic" ||
+    model.api.npm === "@ai-sdk/anthropic" ||
+    id.includes("claude")
+  ) {
+    // Anthropic uses budgetTokens
+    const budgetMap: Record<string, number> = {
+      none: 0,
+      minimal: 1024,
+      low: 4096,
+      medium: 16000,
+      high: 32000,
+    }
+    return { reasoning: { budgetTokens: budgetMap[effort] ?? 1024 } }
+  }
+
+  // OpenRouter / LLM Gateway
+  if (model.providerID === "openrouter" || model.providerID === "llmgateway") {
+    if (id.includes("google") || id.includes("gemini")) {
+      const budgetMap: Record<string, number> = {
+        none: 0,
+        minimal: 1024,
+        low: 4096,
+        medium: 8192,
+        high: 16384,
+      }
+      return { reasoning: { enabled: effort !== "none", budgetTokens: budgetMap[effort] ?? 1024 } }
+    }
+    return { reasoningEffort: effort }
+  }
+
+  // Venice
+  if (model.providerID === "venice") {
+    return { veniceParameters: { disableThinking: effort === "none" } }
+  }
+
+  // Default: pass through as reasoningEffort for providers that support it
+  return { reasoningEffort: effort }
 }
 
 export * as ProviderTransform from "./transform"

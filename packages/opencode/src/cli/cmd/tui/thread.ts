@@ -18,6 +18,7 @@ import { TuiConfig } from "./config/tui"
 import {
   OPENCODE_PROCESS_ROLE,
   OPENCODE_RUN_ID,
+  OPENCODE_WORKER_CWD,
   ensureRunID,
   sanitizedProcessEnv,
 } from "@opencode-ai/core/util/opencode-process"
@@ -39,6 +40,12 @@ function createWorkerFetch(client: RpcClient): typeof fetch {
       headers: Object.fromEntries(request.headers.entries()),
       body,
     })
+    if (!result) {
+      return new Response(null, {
+        status: 502,
+        headers: {},
+      })
+    }
     return new Response(result.body, {
       status: result.status,
       headers: result.headers,
@@ -124,10 +131,18 @@ export const TuiThreadCommand = cmd({
 
       // Resolve relative --project paths from PWD, then use the real cwd after
       // chdir so the thread and worker share the same directory key.
-      const root = Filesystem.resolve(process.env.PWD ?? process.cwd())
+      // When launched via `bun run dev` from a package script, process.cwd()
+      // is the package directory, not the caller's cwd. Try to recover the
+      // original directory from environment variables or parent process.
+      const root = Filesystem.resolve(
+        process.env.OPENCODE_DEV_CWD ??
+          process.env.INIT_CWD ??
+          process.env.PWD ??
+          process.cwd(),
+      )
       const next = args.project
         ? Filesystem.resolve(path.isAbsolute(args.project) ? args.project : path.join(root, args.project))
-        : Filesystem.resolve(process.cwd())
+        : root
       const file = await target()
       try {
         process.chdir(next)
@@ -139,6 +154,7 @@ export const TuiThreadCommand = cmd({
       const env = sanitizedProcessEnv({
         [OPENCODE_PROCESS_ROLE]: "worker",
         [OPENCODE_RUN_ID]: ensureRunID(),
+        [OPENCODE_WORKER_CWD]: cwd,
       })
 
       const worker = new Worker(file, {
@@ -167,7 +183,9 @@ export const TuiThreadCommand = cmd({
       }
       process.on("uncaughtException", error)
       process.on("unhandledRejection", error)
-      process.on("SIGUSR2", reload)
+      if (process.platform !== "win32") {
+        process.on("SIGUSR2", reload)
+      }
 
       let stopped = false
       const stop = async () => {
@@ -175,7 +193,9 @@ export const TuiThreadCommand = cmd({
         stopped = true
         process.off("uncaughtException", error)
         process.off("unhandledRejection", error)
-        process.off("SIGUSR2", reload)
+        if (process.platform !== "win32") {
+          process.off("SIGUSR2", reload)
+        }
         await withTimeout(client.call("shutdown", undefined), 5000).catch((error) => {
           Log.Default.warn("worker shutdown failed", {
             error: errorMessage(error),

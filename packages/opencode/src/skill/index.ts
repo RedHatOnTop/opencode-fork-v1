@@ -288,3 +288,4 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
 }
 
 export * as Skill from "."
+export { SkillRegistry } from "./registry"

@@ -36,7 +36,7 @@ function formatAggregatedCosts(
     UI.Style.TEXT_INFO_BOLD + `${label}:` + UI.Style.TEXT_NORMAL,
     `  Input Tokens:  ${formatTokens(costs.totalInputTokens)}`,
     `  Output Tokens: ${formatTokens(costs.totalOutputTokens)}`,
-    `  Total Cost:    ${UI.Style.TEXT_BOLD}${formatCost(costs.totalCost)}${UI.Style.TEXT_NORMAL}`,
+    `  Total Cost:    ${UI.Style.TEXT_NORMAL_BOLD}${formatCost(costs.totalCost)}${UI.Style.TEXT_NORMAL}`,
     `  API Calls:     ${costs.callCount}`,
   ]
   return lines.join("\n")
@@ -52,7 +52,7 @@ export function formatCostStatusBar(
   isExceeded: boolean
 ): string {
   const style = isExceeded
-    ? UI.Style.TEXT_ERROR_BOLD
+    ? UI.Style.TEXT_DANGER_BOLD
     : isWarning
       ? UI.Style.TEXT_WARNING
       : UI.Style.TEXT_DIM
@@ -105,15 +105,15 @@ export const CostCommand = cmd({
 
         switch (action) {
           case "status": {
-            const status = yield* cost.getCostStatusForTUI
-            const totalCosts = yield* cost.getTotalCosts
+            const status = yield* cost.getCostStatusForTUI()
+            const totalCosts = yield* cost.getTotalCosts()
 
             UI.println(UI.Style.TEXT_INFO_BOLD + "Cost Status:" + UI.Style.TEXT_NORMAL)
             UI.println("")
 
             // Status indicator
             const statusText = status.isExceeded
-              ? UI.Style.TEXT_ERROR_BOLD + "⚠ LIMIT EXCEEDED" + UI.Style.TEXT_NORMAL
+              ? UI.Style.TEXT_DANGER_BOLD + "⚠ LIMIT EXCEEDED" + UI.Style.TEXT_NORMAL
               : status.isWarning
                 ? UI.Style.TEXT_WARNING + "⚠ Approaching limit" + UI.Style.TEXT_NORMAL
                 : UI.Style.TEXT_SUCCESS + "✓ Within limits" + UI.Style.TEXT_NORMAL
@@ -149,7 +149,7 @@ export const CostCommand = cmd({
           }
 
           case "total": {
-            const totalCosts = yield* cost.getTotalCosts
+            const totalCosts = yield* cost.getTotalCosts()
 
             UI.println(UI.Style.TEXT_INFO_BOLD + "Total Accumulated Costs:" + UI.Style.TEXT_NORMAL)
             UI.println("")

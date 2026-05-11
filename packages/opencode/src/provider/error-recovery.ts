@@ -17,29 +17,29 @@ const log = Log.create({ service: "error-recovery" })
 /**
  * Error categories
  */
-export const ErrorCategory = Schema.Literal(
-  "connection",
-  "authentication",
-  "rate_limit",
-  "server_overload",
-  "model_error",
-  "prompt_overflow",
-  "media_size",
-  "unknown"
-)
+export const ErrorCategory = Schema.Union([
+  Schema.Literal("connection"),
+  Schema.Literal("authentication"),
+  Schema.Literal("rate_limit"),
+  Schema.Literal("server_overload"),
+  Schema.Literal("model_error"),
+  Schema.Literal("prompt_overflow"),
+  Schema.Literal("media_size"),
+  Schema.Literal("unknown"),
+])
 export type ErrorCategory = Schema.Schema.Type<typeof ErrorCategory>
 
 /**
  * Recovery strategy types
  */
-export const RecoveryStrategy = Schema.Literal(
-  "retry",
-  "fallback",
-  "compact_and_retry",
-  "non_streaming_fallback",
-  "permanent_retry",
-  "abort"
-)
+export const RecoveryStrategy = Schema.Union([
+  Schema.Literal("retry"),
+  Schema.Literal("fallback"),
+  Schema.Literal("compact_and_retry"),
+  Schema.Literal("non_streaming_fallback"),
+  Schema.Literal("permanent_retry"),
+  Schema.Literal("abort"),
+])
 export type RecoveryStrategy = "retry" | "fallback" | "compact_and_retry" | "non_streaming_fallback" | "permanent_retry" | "abort"
 
 /**
@@ -305,6 +305,10 @@ export interface Interface {
   readonly shouldFallback: (currentModel: string) => Effect.Effect<boolean>
   readonly getNextFallbackModel: (currentModel: string) => Effect.Effect<string | undefined>
   readonly resetConsecutiveErrors: (model: string) => Effect.Effect<void>
+  // Enhanced methods (R23)
+  readonly getDoctorReport: () => Effect.Effect<string>
+  readonly markResolved: (errorId: string) => Effect.Effect<void>
+  readonly getConsecutiveErrorCount: (model: string) => Effect.Effect<number>
 }
 
 /**
@@ -352,6 +356,10 @@ export const layer = Layer.effect(
         state.consecutiveErrors.set(entry.model, currentCount + 1)
         
         state.totalRetries++
+        // Decay: reset totalRetries after a successful resolution period
+        if (errorLog.length > 0 && errorLog[0].resolved) {
+          state.totalRetries = Math.max(0, state.totalRetries - 1)
+        }
 
         log.info("Error recorded", {
           id: entry.id,
@@ -444,6 +452,29 @@ export const layer = Layer.effect(
       }
     )
 
+    // Enhanced: Mark error as resolved
+    const markResolved = Effect.fn("ErrorRecovery.markResolved")(function* (errorId: string) {
+      const entry = errorLog.find((e) => e.id === errorId)
+      if (entry) {
+        entry.resolved = true
+        log.info("Error marked as resolved", { errorId })
+      }
+    })
+
+    // Enhanced: Get consecutive error count for a model
+    const getConsecutiveErrorCount = Effect.fn("ErrorRecovery.getConsecutiveErrorCount")(
+      function* (model: string) {
+        return state.consecutiveErrors.get(model) || 0
+      },
+    )
+
+    // Enhanced: Generate doctor report from internal state
+    const getDoctorReport = Effect.fn("ErrorRecovery.getDoctorReport")(function* () {
+      const recentErrors = errorLog.slice(0, 20)
+      const report = getDoctorReportInternal(recentErrors, state)
+      return report
+    })
+
     return Service.of({
       classify,
       calculateDelay,
@@ -454,6 +485,9 @@ export const layer = Layer.effect(
       shouldFallback,
       getNextFallbackModel,
       resetConsecutiveErrors,
+      markResolved,
+      getConsecutiveErrorCount,
+      getDoctorReport,
     })
   })
 )
@@ -496,13 +530,15 @@ export function formatErrorEntry(entry: ErrorLogEntry): string {
 }
 
 /**
- * Helper: Get doctor report
+ * Internal: Generate doctor report from error log and state
  */
-export function getDoctorReport(errors: ReadonlyArray<ErrorLogEntry>): string {
+function getDoctorReportInternal(errors: ReadonlyArray<ErrorLogEntry>, state: RecoveryState): string {
   const lines = [
     "## System Health Report",
     "",
+    `Generated: ${new Date().toISOString()}`,
     `Total recent errors: ${errors.length}`,
+    `Total retries: ${state.totalRetries}`,
     "",
     "### Errors by category:",
   ]
@@ -519,29 +555,59 @@ export function getDoctorReport(errors: ReadonlyArray<ErrorLogEntry>): string {
   if (errors.length > 0) {
     lines.push("")
     lines.push("### Recent errors:")
-    errors.slice(0, 5).forEach((e) => {
+    errors.slice(0, 10).forEach((e) => {
       lines.push(`- ${formatErrorEntry(e)}`)
     })
   }
 
+  // Consecutive error status per model
+  if (state.consecutiveErrors.size > 0) {
+    lines.push("")
+    lines.push("### Model health:")
+    for (const [model, count] of state.consecutiveErrors) {
+      const status = count >= 3 ? "🔴 UNHEALTHY" : count > 0 ? "🟡 DEGRADED" : "🟢 OK"
+      lines.push(`- ${model}: ${status} (${count} consecutive errors)`)
+    }
+  }
+
   lines.push("")
   lines.push("### Recommendations:")
-  
+
   if (byCategory["authentication"] && byCategory["authentication"] > 0) {
     lines.push("- ⚠️ Authentication errors detected. Check your API keys.")
   }
-  
+
   if (byCategory["rate_limit"] && byCategory["rate_limit"] > 3) {
     lines.push("- ⚠️ Rate limit errors frequent. Consider reducing request rate or upgrading plan.")
   }
-  
+
   if (byCategory["prompt_overflow"] && byCategory["prompt_overflow"] > 0) {
     lines.push("- ℹ️ Context window limits reached. Context compression is active.")
   }
-  
+
   if (byCategory["server_overload"] && byCategory["server_overload"] > 5) {
     lines.push("- ⚠️ Server overload errors detected. Fallback models may be in use.")
   }
 
+  if (byCategory["connection"] && byCategory["connection"] > 0) {
+    lines.push("- ⚠️ Connection errors detected. Check your network connectivity.")
+  }
+
+  if (byCategory["media_size"] && byCategory["media_size"] > 0) {
+    lines.push("- ℹ️ Media size errors. Consider reducing image/file sizes before upload.")
+  }
+
   return lines.join("\n")
+}
+
+/**
+ * Helper: Get doctor report (backward compatible)
+ */
+export function getDoctorReport(errors: ReadonlyArray<ErrorLogEntry>): string {
+  return getDoctorReportInternal(errors, {
+    consecutiveErrors: new Map(),
+    lastError: new Map(),
+    totalRetries: 0,
+    fallbackIndex: 0,
+  })
 }

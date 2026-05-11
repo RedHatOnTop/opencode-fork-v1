@@ -7,7 +7,7 @@
 
 import type { Argv } from "yargs"
 import { Effect } from "effect"
-import { bootstrap } from "@/app/bootstrap"
+import { bootstrap } from "../bootstrap"
 import { Service as ErrorRecoveryService, getDoctorReport } from "@/provider/error-recovery"
 import { defaultLayer as errorRecoveryLayer } from "@/provider/error-recovery"
 

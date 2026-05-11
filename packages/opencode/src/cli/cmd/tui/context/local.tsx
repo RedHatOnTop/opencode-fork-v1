@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "./helper"
-import { batch, createEffect, createMemo } from "solid-js"
+import { batch, createEffect, createMemo, createSignal } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { uniqueBy } from "remeda"
@@ -12,6 +12,8 @@ import { useArgs } from "./args"
 import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Filesystem } from "@/util/filesystem"
+import { Effect } from "effect"
+import { Service as WorkflowService, defaultLayer as workflowLayer } from "@/workflow/workflow"
 
 export function parseModel(model: string) {
   const [providerID, ...rest] = model.split("/")
@@ -119,12 +121,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           modelID: string
         }[]
         variant: Record<string, string | undefined>
+        thinkingEffort: Record<string, string | undefined>
       }>({
         ready: false,
         model: {},
         recent: [],
         favorite: [],
         variant: {},
+        thinkingEffort: {},
       })
 
       const filePath = path.join(Global.Path.state, "model.json")
@@ -142,6 +146,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           recent: modelStore.recent,
           favorite: modelStore.favorite,
           variant: modelStore.variant,
+          thinkingEffort: modelStore.thinkingEffort,
         })
       }
 
@@ -150,6 +155,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (Array.isArray(x.recent)) setModelStore("recent", x.recent)
           if (Array.isArray(x.favorite)) setModelStore("favorite", x.favorite)
           if (typeof x.variant === "object" && x.variant !== null) setModelStore("variant", x.variant)
+          if (typeof x.thinkingEffort === "object" && x.thinkingEffort !== null) setModelStore("thinkingEffort", x.thinkingEffort)
         })
         .catch(() => {})
         .finally(() => {
@@ -377,6 +383,79 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             this.set(variants[index + 1])
           },
         },
+        thinkingEffort: {
+          allLevels: ["none", "minimal", "low", "medium", "high"],
+          selected() {
+            const m = currentModel()
+            if (!m) return undefined
+            const key = `${m.providerID}/${m.modelID}`
+            return modelStore.thinkingEffort[key] ?? "default"
+          },
+          current() {
+            const v = this.selected()
+            if (!v || v === "default") return undefined
+            return v
+          },
+          list() {
+            const m = currentModel()
+            if (!m) return []
+            const provider = sync.data.provider.find((x) => x.id === m.providerID)
+            const info = provider?.models[m.modelID]
+            // Check if model supports reasoning/thinking
+            if (!info?.capabilities?.reasoning) return []
+            return this.allLevels
+          },
+          set(value: string | undefined) {
+            const m = currentModel()
+            if (!m) return
+            const key = `${m.providerID}/${m.modelID}`
+            setModelStore("thinkingEffort", key, value ?? "default")
+            save()
+          },
+          cycle() {
+            const levels = this.list()
+            if (levels.length === 0) return
+            const current = this.current()
+            if (!current) {
+              this.set(levels[1]) // Start with "minimal" if not set
+              return
+            }
+            const index = levels.indexOf(current)
+            if (index === -1 || index === levels.length - 1) {
+              this.set(undefined) // Reset to default
+              return
+            }
+            this.set(levels[index + 1])
+          },
+        },
+      }
+    })
+
+    const workflow = iife(() => {
+      const [mode, setMode] = createSignal<"vibe" | "spec">("vibe")
+
+      async function toggle() {
+        const next = mode() === "vibe" ? "spec" : "vibe"
+        setMode(next)
+        batch(() => {
+          agent.set(next === "spec" ? "plan" : "build")
+        })
+        const program = Effect.gen(function* () {
+          const service = yield* WorkflowService
+          yield* service.setMode(next)
+        })
+        void Effect.runPromise(Effect.provide(program, workflowLayer) as any).catch(() => {})
+        toast.show({
+          variant: next === "spec" ? "info" : "success",
+          message: next === "spec" ? "Switched to SPEC mode" : "Switched to VIBE mode",
+          duration: 2000,
+        })
+      }
+
+      return {
+        mode,
+        setMode,
+        toggle,
       }
     })
 
@@ -420,6 +499,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       model,
       agent,
       mcp,
+      workflow,
     }
     return result
   },

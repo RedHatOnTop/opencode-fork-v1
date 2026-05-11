@@ -292,7 +292,7 @@ export const RunCommand = cmd({
       .option("thinking", {
         type: "boolean",
         describe: "show thinking blocks",
-        default: false,
+        default: true,
       })
       .option("dangerously-skip-permissions", {
         type: "boolean",
@@ -351,20 +351,20 @@ export const RunCommand = cmd({
       process.exit(1)
     }
 
-    const rules: Permission.Ruleset = [
+    const rules = [
       {
         permission: "question",
-        action: "deny",
+        action: "deny" as const,
         pattern: "*",
       },
       {
         permission: "plan_enter",
-        action: "deny",
+        action: "deny" as const,
         pattern: "*",
       },
       {
         permission: "plan_exit",
-        action: "deny",
+        action: "deny" as const,
         pattern: "*",
       },
     ]

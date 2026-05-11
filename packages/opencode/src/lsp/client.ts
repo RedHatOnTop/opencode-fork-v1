@@ -166,7 +166,7 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
     dedupeDiagnostics([...(pushDiagnostics.get(filePath) ?? []), ...(pullDiagnostics.get(filePath) ?? [])])
   const updatePushDiagnostics = (filePath: string, next: Diagnostic[]) => {
     pushDiagnostics.set(filePath, next)
-    Bus.publish(Event.Diagnostics, { path: filePath, serverID: input.serverID })
+    void Bus.publish(Event.Diagnostics, { path: filePath, serverID: input.serverID })
   }
   const updatePullDiagnostics = (filePath: string, next: Diagnostic[]) => {
     pullDiagnostics.set(filePath, next)
@@ -298,7 +298,19 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
     })
   }
 
+  const MAX_LSP_FILE_CACHE = 500
   const files: Record<string, { version: number; text: string }> = {}
+
+  function evictFileCache() {
+    const keys = Object.keys(files)
+    if (keys.length <= MAX_LSP_FILE_CACHE) return
+    const toRemove = keys.slice(0, keys.length - MAX_LSP_FILE_CACHE)
+    for (const key of toRemove) {
+      pushDiagnostics.delete(key)
+      pullDiagnostics.delete(key)
+      delete files[key]
+    }
+  }
 
   // --- Diagnostic helpers ---
 
@@ -608,6 +620,7 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
 
           const next = document.version + 1
           files[request.path] = { version: next, text }
+          evictFileCache()
           logger.info("textDocument/didChange", {
             path: request.path,
             version: next,
@@ -655,6 +668,7 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
           },
         })
         files[request.path] = { version: 0, text }
+        evictFileCache()
         return 0
       },
     },

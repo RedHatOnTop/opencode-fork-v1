@@ -189,13 +189,13 @@ export const BUILTIN_THEMES: Record<string, Theme> = {
  * Theme Engine Service Interface
  */
 export interface Interface {
-  readonly getCurrentTheme: Effect.Effect<Theme>
-  readonly setTheme: (themeName: string) => Effect.Effect<void>
+  readonly getCurrentTheme: () => Effect.Effect<Theme>
+  readonly setTheme: (themeName: string) => Effect.Effect<void, Error>
   readonly getTheme: (themeName: string) => Effect.Effect<Option.Option<Theme>>
-  readonly listThemes: Effect.Effect<ReadonlyArray<{ name: string; description: string; isDark: boolean }>>
+  readonly listThemes: () => Effect.Effect<ReadonlyArray<{ name: string; description: string; isDark: boolean }>>
   readonly getStyle: (styleName: keyof Theme["styles"]) => Effect.Effect<Color>
   readonly getColor: (colorName: keyof Theme["colors"]) => Effect.Effect<string>
-  readonly isDark: Effect.Effect<boolean>
+  readonly isDark: () => Effect.Effect<boolean>
   readonly registerCustomTheme: (theme: Theme) => Effect.Effect<void>
 }
 
@@ -219,7 +219,7 @@ export const layer = Layer.effect(
     // Default to "default" theme (config loading can be added later)
     const themeName = "default"
 
-    const initialTheme = BUILTIN_THEMES[themeName] || BUILTIN_THEMES.default
+    const initialTheme = (BUILTIN_THEMES[themeName] ?? BUILTIN_THEMES["default"]) as Theme
 
     const state: State = {
       currentTheme: initialTheme,
@@ -232,9 +232,8 @@ export const layer = Layer.effect(
 
     const setTheme = Effect.fn("Theme.setTheme")(function* (themeName: string) {
       // Check built-in themes first
-      let theme = BUILTIN_THEMES[themeName]
+      let theme: Theme | undefined = BUILTIN_THEMES[themeName] as Theme | undefined
 
-      // Then check custom themes
       if (!theme) {
         theme = state.customThemes.get(themeName)
       }
