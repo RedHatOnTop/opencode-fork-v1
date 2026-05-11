@@ -121,7 +121,7 @@ npm publish --tag latest
     const result = analyzeScript(scriptContent)
 
     // Should detect curl and npm publish
-    expect(result).toContain("curl")
-    expect(result).toContain("npm publish")
+    expect(result.some((r) => r.matchedText.includes("curl"))).toBe(true)
+    expect(result.some((r) => r.matchedText.includes("npm publish"))).toBe(true)
   })
 })

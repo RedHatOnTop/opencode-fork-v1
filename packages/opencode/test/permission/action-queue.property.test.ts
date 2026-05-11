@@ -4,8 +4,8 @@ import fc from "fast-check"
 import * as ActionQueue from "@/permission/action-queue"
 
 describe("Property 3: Action Queue FIFO 및 상태 전이", () => {
-  const createQueueItem = (index: number): Omit<ActionQueue.QueueItem, "id" | "status"> => ({
-    requestedAt: Date.now() + index * 1000,
+  const createQueueItem = (index: number): Omit<ActionQueue.QueueItem, "id" | "requestedAt" | "status"> => ({
+    sessionId: `session-${index}`,
     reason: `Test reason ${index}`,
     command: `test-command-${index}`,
     context: `test-context-${index}`,
@@ -54,7 +54,7 @@ describe("Property 3: Action Queue FIFO 및 상태 전이", () => {
             Effect.gen(function* () {
               const queue = yield* ActionQueue.Service
               const item = yield* queue.add({
-                requestedAt: Date.now(),
+                sessionId: "test-session",
                 reason: "Test",
                 command: "test",
                 context: "test",
@@ -85,7 +85,7 @@ describe("Property 3: Action Queue FIFO 및 상태 전이", () => {
       Effect.gen(function* () {
         const queue = yield* ActionQueue.Service
         const item = yield* queue.add({
-          requestedAt: Date.now(),
+          sessionId: "test-session",
           reason: "Test",
           command: "test",
           context: "test",

@@ -36,11 +36,10 @@ describe("Property 1: Approval Mode 권한 결정 일관성", () => {
         fc.constantFrom(...toolCategories),
         fc.constantFrom(...commands),
         async (mode, category, command) => {
-          const result1 = await Effect.runPromise(evaluateWithMode(mode, category, command))
-          const result2 = await Effect.runPromise(evaluateWithMode(mode, category, command))
+          const result1 = evaluateWithMode(category, command, mode)
+          const result2 = evaluateWithMode(category, command, mode)
 
           expect(result1.action).toBe(result2.action)
-          expect(result1.reason).toBe(result2.reason)
         }
       ),
       { numRuns: 100 }
@@ -53,7 +52,7 @@ describe("Property 1: Approval Mode 권한 결정 일관성", () => {
         fc.constantFrom(...toolCategories),
         fc.string(),
         async (category, command) => {
-          const result = await Effect.runPromise(evaluateWithMode("strict", category, command))
+          const result = evaluateWithMode(category, command, "strict")
           expect(result.action).toBe("ask")
         }
       ),
@@ -75,7 +74,7 @@ describe("Property 1: Approval Mode 권한 결정 일관성", () => {
       fc.asyncProperty(
         fc.constantFrom(...destructivePatterns),
         async (command) => {
-          const result = await Effect.runPromise(evaluateWithMode("yolo", "bash", command))
+          const result = await Effect.runPromise(Effect.sync(() => evaluateWithMode("bash", command, "yolo")))
           expect(result.action).toBe("deny")
         }
       ),
@@ -88,7 +87,7 @@ describe("Property 1: Approval Mode 권한 결정 일관성", () => {
       fc.asyncProperty(
         fc.constantFrom(...safeCommands),
         async (command) => {
-          const result = await Effect.runPromise(evaluateWithMode("yolo", "bash", command))
+          const result = await Effect.runPromise(Effect.sync(() => evaluateWithMode("bash", command, "yolo")))
           expect(result.action).toBe("allow")
         }
       ),

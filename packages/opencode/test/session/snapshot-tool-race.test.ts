@@ -155,7 +155,7 @@ function makeHttp() {
   )
 }
 
-const it = testEffect(makeHttp())
+const it = testEffect(makeHttp() as any)
 
 const providerCfg = (url: string) => ({
   provider: {

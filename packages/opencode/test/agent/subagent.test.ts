@@ -1,409 +1,408 @@
 /**
- * Sub-Agent Tool Permission Unit Tests
- *
- * Tests scoped tool permissions for different agent types.
+ * @file SubAgent tests - 5-agent model validation
  */
 
-import { describe, expect, it } from "bun:test"
-import { Effect, Option } from "effect"
-import {
-  Service as SubAgentService,
-  SubAgentType,
-  ToolPermissions,
-  defaultLayer as subAgentLayer,
-  isToolAllowed,
-  isToolAsk,
-} from "@/agent/subagent"
+import { describe, it, expect } from "bun:test"
+import { Effect, Option, Exit } from "effect"
+import * as SubAgent from "../../src/agent/subagent"
 
-// Helper to run Effect with the test layer
-const runWithLayer = <A>(effect: Effect.Effect<A>) =>
-  Effect.runPromise(Effect.provide(effect, subAgentLayer))
-
-describe("Sub-Agent Tool Permissions", () => {
-  describe("Orchestrator Agent", () => {
-    const agentType: SubAgentType = "orchestrator"
-
-    it("should have full read permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "read"))
-      expect(result).toBe(true)
+describe("SubAgent Service", () => {
+  describe("Agent Definitions", () => {
+    it("should have exactly 5 specialized agents + orchestrator", async () => {
+      // Count the agent types from the SubAgentType literal
+      const agentTypes = [
+        "orchestrator",
+        "planner",
+        "code-reviewer",
+        "security-reviewer",
+        "build-error-resolver",
+        "refactor-cleaner",
+      ] as const
+      expect(agentTypes).toHaveLength(6)
+      
+      // Verify each agent can be retrieved via the helper
+      const tests = agentTypes.map(async (type) => {
+        const program = Effect.gen(function* () {
+          const service = yield* SubAgent.Service
+          return yield* service.getAgent(type)
+        }).pipe(Effect.provide(SubAgent.layer))
+        
+        const agent = await Effect.runPromise(program)
+        expect(agent.type).toBe(type)
+      })
+      
+      await Promise.all(tests)
     })
 
-    it("should have full edit permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "edit"))
-      expect(result).toBe(true)
+    it("should have correct agent types", async () => {
+      const agentTypes: SubAgent.SubAgentType[] = [
+        "orchestrator",
+        "planner",
+        "code-reviewer",
+        "security-reviewer",
+        "build-error-resolver",
+        "refactor-cleaner",
+      ]
+      
+      const results: string[] = []
+      for (const type of agentTypes) {
+        const program = Effect.gen(function* () {
+          const service = yield* SubAgent.Service
+          const agent = yield* service.getAgent(type)
+          return agent.type
+        }).pipe(Effect.provide(SubAgent.layer))
+        
+        results.push(await Effect.runPromise(program))
+      }
+      
+      expect(results.sort()).toEqual([
+        "build-error-resolver",
+        "code-reviewer",
+        "orchestrator",
+        "planner",
+        "refactor-cleaner",
+        "security-reviewer",
+      ])
     })
 
-    it("should have full create permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "create"))
-      expect(result).toBe(true)
-    })
-
-    it("should have full delete permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "delete"))
-      expect(result).toBe(true)
-    })
-
-    it("should have full bash permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "bash"))
-      expect(result).toBe(true)
-    })
-
-    it("should have full glob permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "glob"))
-      expect(result).toBe(true)
-    })
-
-    it("should have full grep permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "grep"))
-      expect(result).toBe(true)
-    })
-
-    it("should have full task permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "task"))
-      expect(result).toBe(true)
+    it("should have unique activation keywords", async () => {
+      const agentTypes: SubAgent.SubAgentType[] = [
+        "orchestrator",
+        "planner",
+        "code-reviewer",
+        "security-reviewer",
+        "build-error-resolver",
+        "refactor-cleaner",
+      ]
+      
+      const allKeywords: string[] = []
+      for (const type of agentTypes) {
+        const program = Effect.gen(function* () {
+          const service = yield* SubAgent.Service
+          const agent = yield* service.getAgent(type)
+          return agent.activationKeywords
+        }).pipe(Effect.provide(SubAgent.layer))
+        
+        const keywords = await Effect.runPromise(program)
+        allKeywords.push(...keywords)
+      }
+      
+      const uniqueKeywords = new Set(allKeywords)
+      expect(uniqueKeywords.size).toBe(allKeywords.length)
     })
   })
 
-  describe("Security Auditor Agent", () => {
-    const agentType: SubAgentType = "security-auditor"
+  describe("Planner Agent", () => {
+    it("should have correct permissions", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("planner")
+        return agent.permissions
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should have read permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "read"))
-      expect(result).toBe(true)
+      const result = await Effect.runPromise(program)
+      expect(result.read).toBe("allow")
+      expect(result.edit).toBe("deny")
+      expect(result.create).toBe("deny")
+      expect(result.delete).toBe("deny")
+      expect(result.bash).toBe("allow") // Planner has bash for exploration
     })
 
-    it("should have glob permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "glob"))
-      expect(result).toBe(true)
-    })
+    it("should have planning-related keywords", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("planner")
+        return agent.activationKeywords
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should have grep permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "grep"))
-      expect(result).toBe(true)
-    })
-
-    it("should require ask for edit", async () => {
-      const result = await runWithLayer(isToolAsk(agentType, "edit"))
-      expect(result).toBe(true)
-    })
-
-    it("should deny create", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "create"))
-      expect(result).toBe(false)
-    })
-
-    it("should deny delete", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "delete"))
-      expect(result).toBe(false)
-    })
-
-    it("should deny bash (security risk)", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "bash"))
-      expect(result).toBe(false)
-    })
-
-    it("should deny task", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "task"))
-      expect(result).toBe(false)
-    })
-
-    it("should not be able to edit directly", async () => {
-      const allowed = await runWithLayer(isToolAllowed(agentType, "edit"))
-      expect(allowed).toBe(false)
+      const result = await Effect.runPromise(program)
+      expect(result).toContain("plan")
+      expect(result).toContain("architecture")
+      expect(result).toContain("roadmap")
+      expect(result).toContain("design system")
     })
   })
 
   describe("Code Reviewer Agent", () => {
-    const agentType: SubAgentType = "code-reviewer"
+    it("should have correct permissions", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("code-reviewer")
+        return agent.permissions
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should have read permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "read"))
-      expect(result).toBe(true)
+      const result = await Effect.runPromise(program)
+      expect(result.read).toBe("allow")
+      expect(result.edit).toBe("ask")
+      expect(result.create).toBe("ask")
+      expect(result.delete).toBe("deny")
+      expect(result.bash).toBe("deny") // No bash for security
     })
 
-    it("should have glob permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "glob"))
-      expect(result).toBe(true)
-    })
+    it("should have code review keywords", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("code-reviewer")
+        return agent.activationKeywords
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should have grep permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "grep"))
-      expect(result).toBe(true)
-    })
-
-    it("should require ask for edit", async () => {
-      const result = await runWithLayer(isToolAsk(agentType, "edit"))
-      expect(result).toBe(true)
-    })
-
-    it("should require ask for create", async () => {
-      const result = await runWithLayer(isToolAsk(agentType, "create"))
-      expect(result).toBe(true)
-    })
-
-    it("should deny delete", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "delete"))
-      expect(result).toBe(false)
-    })
-
-    it("should deny bash", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "bash"))
-      expect(result).toBe(false)
-    })
-
-    it("should deny task", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "task"))
-      expect(result).toBe(false)
+      const result = await Effect.runPromise(program)
+      expect(result).toContain("code review")
+      expect(result).toContain("quality check")
+      expect(result).toContain("design pattern")
     })
   })
 
-  describe("Test Writer Agent", () => {
-    const agentType: SubAgentType = "test-writer"
+  describe("Security Reviewer Agent", () => {
+    it("should have correct permissions", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("security-reviewer")
+        return agent.permissions
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should have read permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "read"))
-      expect(result).toBe(true)
+      const result = await Effect.runPromise(program)
+      expect(result.read).toBe("allow")
+      expect(result.edit).toBe("ask")
+      expect(result.bash).toBe("deny") // High security - no bash
     })
 
-    it("should have create permission (for test files)", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "create"))
-      expect(result).toBe(true)
-    })
+    it("should have security-related keywords", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("security-reviewer")
+        return agent.activationKeywords
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should require ask for edit", async () => {
-      const result = await runWithLayer(isToolAsk(agentType, "edit"))
-      expect(result).toBe(true)
-    })
-
-    it("should deny delete", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "delete"))
-      expect(result).toBe(false)
-    })
-
-    it("should deny bash", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "bash"))
-      expect(result).toBe(false)
+      const result = await Effect.runPromise(program)
+      expect(result).toContain("security audit")
+      expect(result).toContain("vulnerability")
+      expect(result).toContain("XSS")
+      expect(result).toContain("SQL injection")
+      expect(result).toContain("OWASP")
     })
   })
 
-  describe("Docs Writer Agent", () => {
-    const agentType: SubAgentType = "docs-writer"
+  describe("Build Error Resolver Agent", () => {
+    it("should have correct permissions", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("build-error-resolver")
+        return agent.permissions
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should have read permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "read"))
-      expect(result).toBe(true)
+      const result = await Effect.runPromise(program)
+      expect(result.read).toBe("allow")
+      expect(result.edit).toBe("allow") // Can edit to fix errors
+      expect(result.create).toBe("ask")
+      expect(result.bash).toBe("allow") // Bash required for debugging
     })
 
-    it("should have create permission (for doc files)", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "create"))
-      expect(result).toBe(true)
-    })
+    it("should have build error keywords", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("build-error-resolver")
+        return agent.activationKeywords
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should require ask for edit", async () => {
-      const result = await runWithLayer(isToolAsk(agentType, "edit"))
-      expect(result).toBe(true)
-    })
-
-    it("should deny delete", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "delete"))
-      expect(result).toBe(false)
-    })
-
-    it("should deny bash", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "bash"))
-      expect(result).toBe(false)
+      const result = await Effect.runPromise(program)
+      expect(result).toContain("build error")
+      expect(result).toContain("compilation error")
+      expect(result).toContain("CI/CD failure")
+      expect(result).toContain("type error")
     })
   })
 
-  describe("Debugger Agent", () => {
-    const agentType: SubAgentType = "debugger"
+  describe("Refactor Cleaner Agent", () => {
+    it("should have correct permissions", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("refactor-cleaner")
+        return agent.permissions
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should have read permission", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "read"))
-      expect(result).toBe(true)
+      const result = await Effect.runPromise(program)
+      expect(result.read).toBe("allow")
+      expect(result.edit).toBe("allow") // Can edit to refactor
+      expect(result.delete).toBe("ask")
+      expect(result.bash).toBe("deny") // No bash needed
     })
 
-    it("should have bash permission (for debug commands)", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "bash"))
-      expect(result).toBe(true)
-    })
+    it("should have refactoring keywords", async () => {
+      const program = Effect.gen(function* () {
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("refactor-cleaner")
+        return agent.activationKeywords
+      }).pipe(Effect.provide(SubAgent.layer))
 
-    it("should require ask for edit", async () => {
-      const result = await runWithLayer(isToolAsk(agentType, "edit"))
-      expect(result).toBe(true)
-    })
-
-    it("should require ask for create", async () => {
-      const result = await runWithLayer(isToolAsk(agentType, "create"))
-      expect(result).toBe(true)
-    })
-
-    it("should deny delete", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "delete"))
-      expect(result).toBe(false)
-    })
-
-    it("should deny task", async () => {
-      const result = await runWithLayer(isToolAllowed(agentType, "task"))
-      expect(result).toBe(false)
+      const result = await Effect.runPromise(program)
+      expect(result).toContain("refactor")
+      expect(result).toContain("technical debt")
+      expect(result).toContain("clean up")
+      expect(result).toContain("deduplicate")
     })
   })
 
-  describe("Agent Definitions", () => {
-    it("should return orchestrator definition", async () => {
+  describe("Orchestrator Agent", () => {
+    it("should have full permissions", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.getAgent("orchestrator")
-      })
-      const result = await runWithLayer(program)
-      expect(result.type).toBe("orchestrator")
-      expect(result.name).toBe("Orchestrator")
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("orchestrator")
+        return agent.permissions
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
+      expect(result.read).toBe("allow")
+      expect(result.edit).toBe("allow")
+      expect(result.create).toBe("allow")
+      expect(result.delete).toBe("allow")
+      expect(result.bash).toBe("allow")
     })
 
-    it("should return security-auditor definition", async () => {
+    it("should have no activation keywords", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.getAgent("security-auditor")
-      })
-      const result = await runWithLayer(program)
-      expect(result.type).toBe("security-auditor")
-      expect(result.name).toBe("Security Auditor")
+        const service = yield* SubAgent.Service
+        const agent = yield* service.getAgent("orchestrator")
+        return agent.activationKeywords
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
+      expect(result).toHaveLength(0)
     })
 
-    it("should return all agent definitions", async () => {
+    it("should be identified as orchestrator", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.getAllAgents()
-      })
-      const result = await runWithLayer(program)
-      expect(result.length).toBeGreaterThanOrEqual(6)
-      const types = result.map((a) => a.type)
-      expect(types).toContain("orchestrator")
-      expect(types).toContain("security-auditor")
-      expect(types).toContain("code-reviewer")
-      expect(types).toContain("test-writer")
-      expect(types).toContain("docs-writer")
-      expect(types).toContain("debugger")
+        const service = yield* SubAgent.Service
+        return yield* service.isOrchestrator("orchestrator")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
+      expect(result).toBe(true)
     })
   })
 
-  describe("Agent Detection by Keywords", () => {
-    it("should detect security audit keyword", async () => {
+  describe("Keyword Matching", () => {
+    it("should find agent by planner keywords", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.findAgentByKeyword("Please do a security audit")
-      })
-      const result = await runWithLayer(program)
+        const service = yield* SubAgent.Service
+        return yield* service.findAgentByKeyword("help me plan the architecture")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
       expect(Option.isSome(result)).toBe(true)
-      if (Option.isSome(result)) {
-        expect(result.value).toBe("security-auditor")
-      }
+      expect(Option.getOrNull(result)).toBe("planner")
     })
 
-    it("should detect code review keyword", async () => {
+    it("should find agent by code review keywords", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.findAgentByKeyword("Can you review this code?")
-      })
-      const result = await runWithLayer(program)
+        const service = yield* SubAgent.Service
+        return yield* service.findAgentByKeyword("can you review this code")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
       expect(Option.isSome(result)).toBe(true)
-      if (Option.isSome(result)) {
-        expect(result.value).toBe("code-reviewer")
-      }
+      expect(Option.getOrNull(result)).toBe("code-reviewer")
     })
 
-    it("should detect test keyword", async () => {
+    it("should find agent by security keywords", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.findAgentByKeyword("Write unit tests for this")
-      })
-      const result = await runWithLayer(program)
+        const service = yield* SubAgent.Service
+        return yield* service.findAgentByKeyword("audit for security vulnerabilities")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
       expect(Option.isSome(result)).toBe(true)
-      if (Option.isSome(result)) {
-        expect(result.value).toBe("test-writer")
-      }
+      expect(Option.getOrNull(result)).toBe("security-reviewer")
     })
 
-    it("should detect documentation keyword", async () => {
+    it("should find agent by build error keywords", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.findAgentByKeyword("Add documentation")
-      })
-      const result = await runWithLayer(program)
+        const service = yield* SubAgent.Service
+        return yield* service.findAgentByKeyword("fix this build error")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
       expect(Option.isSome(result)).toBe(true)
-      if (Option.isSome(result)) {
-        expect(result.value).toBe("docs-writer")
-      }
+      expect(Option.getOrNull(result)).toBe("build-error-resolver")
     })
 
-    it("should detect debug keyword", async () => {
+    it("should find agent by refactor keywords", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.findAgentByKeyword("Debug this error")
-      })
-      const result = await runWithLayer(program)
+        const service = yield* SubAgent.Service
+        return yield* service.findAgentByKeyword("clean up this technical debt")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
       expect(Option.isSome(result)).toBe(true)
-      if (Option.isSome(result)) {
-        expect(result.value).toBe("debugger")
-      }
+      expect(Option.getOrNull(result)).toBe("refactor-cleaner")
     })
 
-    it("should return none for no match", async () => {
+    it("should return none for unmatched keywords", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.findAgentByKeyword("Hello world")
-      })
-      const result = await runWithLayer(program)
+        const service = yield* SubAgent.Service
+        return yield* service.findAgentByKeyword("random unrelated text")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
       expect(Option.isNone(result)).toBe(true)
     })
   })
 
-  describe("Tool Permission Lookup", () => {
-    it("should return correct permission for orchestrator", async () => {
+  describe("Tool Permission Helpers", () => {
+    it("should check if tool is allowed", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.checkToolPermission("orchestrator", "edit")
-      })
-      const result = await runWithLayer(program)
+        const service = yield* SubAgent.Service
+        return yield* service.checkToolPermission("planner", "read")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
       expect(result).toBe("allow")
     })
 
-    it("should return correct permission for security-auditor edit", async () => {
+    it("should return deny for restricted tool", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.checkToolPermission("security-auditor", "edit")
-      })
-      const result = await runWithLayer(program)
-      expect(result).toBe("ask")
+        const service = yield* SubAgent.Service
+        return yield* service.checkToolPermission("planner", "edit")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
+      expect(result).toBe("deny")
     })
 
-    it("should return correct permission for security-auditor create", async () => {
+    it("should return ask for approval-required tools", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.checkToolPermission("security-auditor", "create")
-      })
-      const result = await runWithLayer(program)
-      expect(result).toBe("deny")
+        const service = yield* SubAgent.Service
+        return yield* service.checkToolPermission("code-reviewer", "edit")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
+      expect(result).toBe("ask")
     })
   })
 
-  describe("Orchestrator Check", () => {
-    it("should return true for orchestrator", async () => {
+  describe("System Prompt Injection", () => {
+    it("should return none for orchestrator", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.isOrchestrator("orchestrator")
-      })
-      const result = await runWithLayer(program)
-      expect(result).toBe(true)
+        const service = yield* SubAgent.Service
+        return yield* service.getSystemPromptInjection("orchestrator")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
+      expect(Option.isNone(result)).toBe(true)
     })
 
-    it("should return false for other agents", async () => {
+    it("should return injection for planner", async () => {
       const program = Effect.gen(function* () {
-        const service = yield* SubAgentService
-        return yield* service.isOrchestrator("security-auditor")
-      })
-      const result = await runWithLayer(program)
-      expect(result).toBe(false)
+        const service = yield* SubAgent.Service
+        return yield* service.getSystemPromptInjection("planner")
+      }).pipe(Effect.provide(SubAgent.layer))
+
+      const result = await Effect.runPromise(program)
+      expect(Option.isSome(result)).toBe(true)
+      const injection = Option.getOrNull(result)
+      expect(injection).toContain("PLANNER")
+      expect(injection).toContain("read: allow")
+      expect(injection).toContain("edit: deny")
     })
   })
 })

@@ -48,8 +48,8 @@ description: ${description}
             return yield* svc.skills(build!)
           }).pipe(Effect.provide(SystemPrompt.defaultLayer))
 
-          const first = await Effect.runPromise(runSkills)
-          const second = await Effect.runPromise(runSkills)
+          const first = (await Effect.runPromise(runSkills as any)) as string | undefined
+          const second = (await Effect.runPromise(runSkills as any)) as string | undefined
 
           expect(first).toBe(second)
 

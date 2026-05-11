@@ -201,7 +201,7 @@ function makeHttp() {
   ).pipe(Layer.provide(summary))
 }
 
-const it = testEffect(makeHttp())
+const it = testEffect(makeHttp() as any)
 const unix = process.platform !== "win32" ? it.live : it.live.skip
 
 // Config that registers a custom "test" provider with a "test-model" model

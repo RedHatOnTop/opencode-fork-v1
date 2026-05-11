@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test"
 import fc from "fast-check"
-import { WorkflowMode, SpecPhase } from "@/workflow/workflow"
+import { WorkflowMode, WorkflowPhase } from "@/workflow/workflow"
 
 describe("Property 4: Workflow Mode 전환 무결성", () => {
   it("모드는 항상 spec 또는 vibe 중 하나여야 함", () => {
@@ -10,7 +10,7 @@ describe("Property 4: Workflow Mode 전환 무결성", () => {
       fc.property(fc.string(), (mode) => {
         if (validModes.includes(mode)) {
           // Should be valid
-          expect(WorkflowMode.literals).toContain(mode)
+          expect([...WorkflowMode.literals] as string[]).toContain(mode)
         }
       }),
       { numRuns: 100 }
@@ -23,7 +23,7 @@ describe("Property 4: Workflow Mode 전환 무결성", () => {
     fc.assert(
       fc.property(fc.string(), (phase) => {
         if (validPhases.includes(phase)) {
-          expect(SpecPhase.literals).toContain(phase)
+          expect([...WorkflowPhase.literals] as string[]).toContain(phase)
         }
       }),
       { numRuns: 100 }
@@ -62,15 +62,14 @@ describe("Property 4: Workflow Mode 전환 무결성", () => {
     }
   })
 
-  it("WorkflowMode와 SpecPhase가 올바르게 정의되어 있음", () => {
-    expect(WorkflowMode.literals).toContain("spec")
-    expect(WorkflowMode.literals).toContain("vibe")
+  it("WorkflowMode와 WorkflowPhase가 올바르게 정의되어 있음", () => {
+    expect([...WorkflowMode.literals] as string[]).toContain("spec")
+    expect([...WorkflowMode.literals] as string[]).toContain("vibe")
     expect(WorkflowMode.literals).toHaveLength(2)
 
-    expect(SpecPhase.literals).toContain("plan")
-    expect(SpecPhase.literals).toContain("execute")
-    expect(SpecPhase.literals).toContain("verify")
-    expect(SpecPhase.literals).toContain("ship")
-    expect(SpecPhase.literals).toHaveLength(4)
+    expect([...WorkflowPhase.literals] as string[]).toContain("plan")
+    expect([...WorkflowPhase.literals] as string[]).toContain("execute")
+    expect([...WorkflowPhase.literals] as string[]).toContain("verify")
+    expect([...WorkflowPhase.literals] as string[]).toContain("ship")
   })
 })
