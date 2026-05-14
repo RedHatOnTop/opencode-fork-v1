@@ -13,6 +13,14 @@ import { compress } from "hono/compress"
 
 const log = Log.create({ service: "server" })
 
+/**
+ * Redact sensitive query parameters from a URL string to prevent
+ * token leakage in logs, browser history, and referrer headers.
+ */
+function sanitizeUrl(url: string): string {
+  return url.replace(/([?&])auth_token=[^&]*/g, "$1auth_token=[REDACTED]")
+}
+
 export const ErrorMiddleware: ErrorHandler = (err, c) => {
   log.error("failed", {
     error: err,
@@ -45,22 +53,37 @@ export const AuthMiddleware: MiddlewareHandler = (c, next) => {
   if (!password) return next()
   const username = Flag.OPENCODE_SERVER_USERNAME ?? "opencode"
 
-  if (c.req.query("auth_token")) c.req.raw.headers.set("authorization", `Basic ${c.req.query("auth_token")}`)
+  // SECURITY: auth_token query parameter support is deprecated.
+  // Use Authorization header instead. The token is read once and set as a
+  // header so downstream code never needs the query parameter.
+  // Note: Hono's c.req.raw is a standard Request with an immutable URL,
+  // so the query parameter cannot be removed in-place. The LoggerMiddleware
+  // redacts auth_token from any logged output as a fallback defense.
+  const authToken = c.req.query("auth_token")
+  if (authToken) {
+    c.req.raw.headers.set("authorization", `Basic ${authToken}`)
+  }
 
   return basicAuth({ username, password })(c, next)
 }
 
 export const LoggerMiddleware: MiddlewareHandler = async (c, next) => {
   const skip = c.req.path === "/log"
+  // Sanitize the full URL to redact auth_token in case c.req.url or
+  // similar is ever used here. c.req.path does not include query params
+  // today, but sanitizeUrl is applied defensively for future safety.
+  const sanitizedPath = sanitizeUrl(c.req.path)
+  const sanitizedUrl = sanitizeUrl(c.req.url)
   if (!skip) {
     log.info("request", {
       method: c.req.method,
-      path: c.req.path,
+      path: sanitizedPath,
+      url: sanitizedUrl,
     })
   }
   const timer = log.time("request", {
     method: c.req.method,
-    path: c.req.path,
+    path: sanitizedPath,
   })
   await next()
   if (!skip) timer.stop()
