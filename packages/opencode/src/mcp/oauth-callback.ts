@@ -7,11 +7,11 @@ const log = Log.create({ service: "mcp.oauth-callback" })
 
 function escapeHtml(s: string): string {
   return s
-    .replace(/&/g, "&")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/"/g, """)
-    .replace(/'/g, "&#x27;")
+    .replace(/&/g, '&')
+    .replace(/</g, '<')
+    .replace(/>/g, '>')
+    .replace(/"/g, '"')
+    .replace(/'/g, '&#x27;')
 }
 
 // Current callback server configuration (may differ from defaults if custom redirectUri is used)
