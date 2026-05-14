@@ -496,7 +496,15 @@ export const layer = Layer.effect(
                 return
               }
 
-              const result = yield* create(key, mcp).pipe(Effect.catch(() => Effect.void))
+              const result = yield* create(key, mcp).pipe(
+                Effect.catch((e) => {
+                  log.warn("MCP server creation failed", {
+                    key,
+                    error: e instanceof Error ? e.message : String(e),
+                  })
+                  return Effect.void
+                }),
+              )
               if (!result) return
 
               s.status[key] = result.status

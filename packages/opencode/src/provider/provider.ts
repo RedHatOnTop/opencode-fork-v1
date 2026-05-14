@@ -31,6 +31,8 @@ import { ModelID, ProviderID } from "./schema"
 
 const log = Log.create({ service: "provider" })
 
+const CROSS_REGION_PREFIXES = ["global.", "us.", "eu.", "jp.", "apac.", "au."]
+
 function shouldUseCopilotResponsesApi(modelID: string): boolean {
   const match = /^gpt-(\d+)/.exec(modelID)
   if (!match) return false
@@ -305,8 +307,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         async getModel(sdk: any, modelID: string, options?: Record<string, any>) {
           // Skip region prefixing if model already has a cross-region inference profile prefix
           // Models from models.dev may already include prefixes like us., eu., global., etc.
-          const crossRegionPrefixes = ["global.", "us.", "eu.", "jp.", "apac.", "au."]
-          if (crossRegionPrefixes.some((prefix) => modelID.startsWith(prefix))) {
+          if (CROSS_REGION_PREFIXES.some((prefix) => modelID.startsWith(prefix))) {
             return sdk.languageModel(modelID)
           }
 
@@ -1626,7 +1627,6 @@ const layer: Layer.Layer<
       }
       for (const item of priority) {
         if (providerID === ProviderID.amazonBedrock) {
-          const crossRegionPrefixes = ["global.", "us.", "eu."]
           const candidates = Object.keys(provider.models).filter((m) => m.includes(item))
 
           const globalMatch = candidates.find((m) => m.startsWith("global."))
@@ -1641,7 +1641,7 @@ const layer: Layer.Layer<
             }
           }
 
-          const unprefixed = candidates.find((m) => !crossRegionPrefixes.some((p) => m.startsWith(p)))
+          const unprefixed = candidates.find((m) => !CROSS_REGION_PREFIXES.some((p) => m.startsWith(p)))
           if (unprefixed) return yield* getModel(providerID, ModelID.make(unprefixed))
         } else {
           for (const model of Object.keys(provider.models)) {
