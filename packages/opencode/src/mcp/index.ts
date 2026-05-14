@@ -500,7 +500,7 @@ export const layer = Layer.effect(
                 Effect.catch((e) => {
                   log.warn("MCP server creation failed", {
                     key,
-                    error: e instanceof Error ? e.message : String(e),
+                    error: String(e),
                   })
                   return Effect.void
                 }),
