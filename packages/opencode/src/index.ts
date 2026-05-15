@@ -30,6 +30,11 @@ import { WebCommand } from "./cli/cmd/web"
 import { PrCommand } from "./cli/cmd/pr"
 import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
+import { SetupCommand } from "./cli/cmd/setup"
+import { DoctorCommand } from "./cli/cmd/doctor"
+import { BackupCommand } from "./cli/cmd/backup"
+import { RestoreCommand } from "./cli/cmd/restore"
+import { UpdateCommand, backgroundUpdateCheck } from "./cli/cmd/update"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { JsonMigration } from "@/storage/json-migration"
@@ -177,6 +182,11 @@ const cli = yargs(args)
   .command(SessionCommand)
   .command(PluginCommand)
   .command(DbCommand)
+  .command(SetupCommand)
+  .command(DoctorCommand)
+  .command(BackupCommand)
+  .command(RestoreCommand)
+  .command(UpdateCommand)
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||
@@ -190,6 +200,9 @@ const cli = yargs(args)
     process.exit(1)
   })
   .strict()
+
+// Non-blocking background update check (once per day)
+backgroundUpdateCheck().catch(() => {})
 
 try {
   if (args.includes("-h") || args.includes("--help")) {

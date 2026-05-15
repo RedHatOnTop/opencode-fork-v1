@@ -1,0 +1,93 @@
+{
+  "$schema": "https://opencode.ai/config.schema.json",
+  "_comment": "Default provider presets for opencode setup. Copy to ~/.config/opencode/opencode.json and fill in API keys.",
+  "provider": {
+    "anthropic": {
+      "name": "Anthropic",
+      "api": "anthropic",
+      "models": {
+        "claude-sonnet-4-20250514": {
+          "id": "claude-sonnet-4-20250514",
+          "name": "Claude Sonnet 4"
+        },
+        "claude-opus-4-20250514": {
+          "id": "claude-opus-4-20250514",
+          "name": "Claude Opus 4"
+        },
+        "claude-haiku-3-5-20241022": {
+          "id": "claude-haiku-3-5-20241022",
+          "name": "Claude 3.5 Haiku"
+        }
+      }
+    },
+    "openai": {
+      "name": "OpenAI",
+      "api": "openai",
+      "models": {
+        "gpt-4.1": {
+          "id": "gpt-4.1",
+          "name": "GPT-4.1"
+        },
+        "gpt-4.1-mini": {
+          "id": "gpt-4.1-mini",
+          "name": "GPT-4.1 Mini"
+        },
+        "gpt-4.1-nano": {
+          "id": "gpt-4.1-nano",
+          "name": "GPT-4.1 Nano"
+        },
+        "o3": {
+          "id": "o3",
+          "name": "o3"
+        },
+        "o4-mini": {
+          "id": "o4-mini",
+          "name": "o4-mini"
+        }
+      }
+    },
+    "google": {
+      "name": "Google",
+      "api": "google",
+      "models": {
+        "gemini-2.5-pro": {
+          "id": "gemini-2.5-pro",
+          "name": "Gemini 2.5 Pro"
+        },
+        "gemini-2.5-flash": {
+          "id": "gemini-2.5-flash",
+          "name": "Gemini 2.5 Flash"
+        },
+        "gemini-2.0-flash": {
+          "id": "gemini-2.0-flash",
+          "name": "Gemini 2.0 Flash"
+        }
+      }
+    },
+    "xai": {
+      "name": "xAI",
+      "api": "openai",
+      "options": {
+        "baseURL": "https://api.x.ai/v1"
+      },
+      "models": {
+        "grok-3": {
+          "id": "grok-3",
+          "name": "Grok 3"
+        },
+        "grok-3-mini": {
+          "id": "grok-3-mini",
+          "name": "Grok 3 Mini"
+        }
+      }
+    },
+    "openrouter": {
+      "name": "OpenRouter",
+      "api": "openai",
+      "options": {
+        "baseURL": "https://openrouter.ai/api/v1"
+      },
+      "models": {}
+    }
+  }
+}
