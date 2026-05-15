@@ -1,7 +1,6 @@
 import type { Argv } from "yargs"
 import { cmd } from "./cmd"
 import { UI } from "../ui"
-import { EOL } from "os"
 import fs from "fs"
 import path from "path"
 import { Filesystem } from "@/util/filesystem"

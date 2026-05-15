@@ -1,7 +1,6 @@
 import type { Argv } from "yargs"
 import { cmd } from "./cmd"
 import { UI } from "../ui"
-import { EOL } from "os"
 import fs from "fs"
 import path from "path"
 import { Filesystem } from "@/util/filesystem"
@@ -12,12 +11,6 @@ interface BackupManifest {
   opencodeVersion: string
   projectPath: string
   files: Record<string, string>
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 export const RestoreCommand = cmd({
@@ -53,7 +46,7 @@ export const RestoreCommand = cmd({
     try {
       const raw = fs.readFileSync(backupPath, "utf-8")
       manifest = JSON.parse(raw)
-    } catch (e) {
+    } catch {
       UI.println(UI.Style.TEXT_DANGER + "Invalid backup file: unable to parse JSON." + UI.Style.TEXT_NORMAL)
       process.exit(1)
     }
@@ -102,7 +95,7 @@ export const RestoreCommand = cmd({
         continue
       }
 
-      if (args.dryRun) {
+      if (args["dry-run"]) {
         UI.println(UI.Style.TEXT_INFO + `  Would restore: ${relPath}` + UI.Style.TEXT_NORMAL)
         restored++
         continue
@@ -121,7 +114,7 @@ export const RestoreCommand = cmd({
     }
 
     UI.empty()
-    if (args.dryRun) {
+    if (args["dry-run"]) {
       UI.println(UI.Style.TEXT_INFO + "Dry run complete." + UI.Style.TEXT_NORMAL)
     } else {
       UI.println(UI.Style.TEXT_SUCCESS + "✓ Restore complete" + UI.Style.TEXT_NORMAL)

@@ -12,9 +12,6 @@ import { Auth } from "../../auth"
 import { AppRuntime } from "../../effect/app-runtime"
 import { Config } from "@/config/config"
 import { Effect } from "effect"
-import { Global } from "@opencode-ai/core/global"
-import fs from "fs"
-import path from "path"
 
 // ============================================================================
 // Provider Presets
