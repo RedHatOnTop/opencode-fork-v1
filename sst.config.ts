@@ -17,7 +17,8 @@ export default $config({
   },
   async run() {
     await import("./infra/app.js")
-    await import("./infra/console.js")
-    await import("./infra/enterprise.js")
+    // Disabled in fork — not needed for friends-only distribution
+    // await import("./infra/console.js")
+    // await import("./infra/enterprise.js")
   },
 })
