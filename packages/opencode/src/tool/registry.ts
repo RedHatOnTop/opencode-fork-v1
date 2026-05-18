@@ -1,4 +1,5 @@
 import { PlanExitTool } from "./plan"
+import { SpecAdvanceTool } from "./spec-advance"
 import { Session } from "@/session/session"
 import { QuestionTool } from "./question"
 import { BashTool } from "./bash"
@@ -112,6 +113,7 @@ export const layer: Layer.Layer<
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
+    const specAdvance = yield* SpecAdvanceTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
     const bash = yield* BashTool
@@ -214,6 +216,7 @@ export const layer: Layer.Layer<
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          specAdvance: Tool.init(specAdvance),
           browseSkills: Tool.init(browsetool),
           searchSkills: Tool.init(searchtool),
           loadSkill: Tool.init(loadskilltool),
@@ -239,6 +242,7 @@ export const layer: Layer.Layer<
             tool.patch,
             ...(Flag.OPENCODE_EXPERIMENTAL_LSP_TOOL ? [tool.lsp] : []),
             ...(Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE && Flag.OPENCODE_CLIENT === "cli" ? [tool.plan] : []),
+            tool.specAdvance,
             tool.browseSkills,
             tool.searchSkills,
             tool.loadSkill,

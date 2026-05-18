@@ -127,10 +127,14 @@ export interface Interface {
   readonly isSpecMode: () => Effect.Effect<boolean>
   readonly isVibeMode: () => Effect.Effect<boolean>
 
+  // Mode switching guard
+  readonly canSwitchMode: () => Effect.Effect<{ allowed: boolean; reason?: string }>
+
   // 4-phase pipeline management
   readonly getPhase: () => Effect.Effect<WorkflowPhase>
   readonly advancePhase: (verificationPassed?: boolean, hasPendingTasks?: boolean) => Effect.Effect<WorkflowPhase>
   readonly resetPhase: () => Effect.Effect<void>
+  readonly abortSpec: () => Effect.Effect<void>
   readonly getPhaseHistory: () => Effect.Effect<Array<{ phase: WorkflowPhase; enteredAt: number; exitedAt?: number }>>
   readonly setVerificationResults: (results: Array<{ command: string; success: boolean; output?: string }>) => Effect.Effect<void>
 }
@@ -290,6 +294,18 @@ export const layer = Layer.effect(
       const s = yield* Ref.get(state)
       const previousMode = s.currentMode
 
+      // Guard: prevent switching away from spec mode while an active phase is in progress
+      if (previousMode === "spec" && s.currentPhase !== "idle" && mode !== "spec") {
+        log.warn("Mode switch blocked: spec pipeline active", {
+          phase: s.currentPhase,
+          requestedMode: mode,
+        })
+        yield* Effect.die(new Error(
+          `Cannot switch to ${mode} mode while spec pipeline is at phase "${s.currentPhase}". ` +
+          `Complete or abort the spec pipeline first. Use "/spec abort" to abort.`,
+        ))
+      }
+
       const newConfig: ModeConfig = {
         ...createDefaultConfig(mode),
         ...config,
@@ -300,9 +316,13 @@ export const layer = Layer.effect(
         ...s,
         currentMode: mode,
         config: newConfig,
-        // Reset phase pipeline when switching modes
-        currentPhase: mode === "spec" ? "idle" : "idle",
-        phaseHistory: mode === "spec" ? s.phaseHistory : [],
+        // When entering spec mode, auto-start at "plan" phase
+        // When entering vibe mode, set to "idle"
+        currentPhase: mode === "spec" ? "plan" : "idle",
+        phaseHistory: mode === "spec"
+          ? [{ phase: "plan" as WorkflowPhase, enteredAt: Date.now() }]
+          : [],
+        verificationResults: undefined,
       }
 
       yield* Ref.set(state, newState)
@@ -311,6 +331,15 @@ export const layer = Layer.effect(
         previousMode,
         newMode: mode,
       })
+
+      // When entering spec mode, publish phase change to "plan"
+      if (mode === "spec") {
+        yield* bus.publish(Event.PhaseChanged, {
+          previousPhase: "idle" as WorkflowPhase,
+          newPhase: "plan" as WorkflowPhase,
+          mode,
+        })
+      }
 
       log.info("Workflow mode changed", { from: previousMode, to: mode })
     })
@@ -360,6 +389,17 @@ export const layer = Layer.effect(
     const isVibeMode = Effect.fn("Workflow.isVibeMode")(function* () {
       const s = yield* Ref.get(state)
       return s.currentMode === "vibe"
+    })
+
+    const canSwitchMode = Effect.fn("Workflow.canSwitchMode")(function* () {
+      const s = yield* Ref.get(state)
+      if (s.currentMode === "spec" && s.currentPhase !== "idle") {
+        return {
+          allowed: false,
+          reason: `Spec pipeline is at phase "${s.currentPhase}". Complete or abort the pipeline first.`,
+        }
+      }
+      return { allowed: true }
     })
 
     // -----------------------------------------------------------------------
@@ -435,6 +475,28 @@ export const layer = Layer.effect(
       log.info("Workflow phase reset")
     })
 
+    const abortSpec = Effect.fn("Workflow.abortSpec")(function* () {
+      const s = yield* Ref.get(state)
+      if (s.currentMode !== "spec") {
+        return
+      }
+
+      yield* Ref.update(state, (s): WorkflowState => ({
+        ...s,
+        currentPhase: "idle",
+        phaseHistory: [],
+        verificationResults: undefined,
+      }))
+
+      yield* bus.publish(Event.PhaseChanged, {
+        previousPhase: s.currentPhase,
+        newPhase: "idle" as WorkflowPhase,
+        mode: s.currentMode,
+      })
+
+      log.info("Spec pipeline aborted")
+    })
+
     const getPhaseHistory = Effect.fn("Workflow.getPhaseHistory")(function* () {
       const s = yield* Ref.get(state)
       return s.phaseHistory
@@ -467,9 +529,11 @@ export const layer = Layer.effect(
       getSystemPromptInjection,
       isSpecMode,
       isVibeMode,
+      canSwitchMode,
       getPhase,
       advancePhase,
       resetPhase,
+      abortSpec,
       getPhaseHistory,
       setVerificationResults,
     })

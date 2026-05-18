@@ -74,6 +74,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         [key: string]: McpResource
       }
       formatter: FormatterStatus[]
+      workflow_mode: string
+      workflow_phase: string
       vcs: VcsInfo | undefined
     }>({
       provider_next: {
@@ -101,6 +103,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       mcp: {},
       mcp_resource: {},
       formatter: [],
+      workflow_mode: "vibe",
+      workflow_phase: "idle",
       vcs: undefined,
     })
 
@@ -347,6 +351,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           setStore("vcs", { branch: event.properties.branch })
           break
         }
+      }
+
+      // Handle custom bus events that aren't in the SDK Event type union
+      const evt = event as any
+      if (evt.type === "workflow.mode_changed") {
+        setStore("workflow_mode", evt.properties.newMode)
+      }
+
+      if (evt.type === "workflow.phase_changed") {
+        setStore("workflow_phase", evt.properties.newPhase)
       }
     })
 

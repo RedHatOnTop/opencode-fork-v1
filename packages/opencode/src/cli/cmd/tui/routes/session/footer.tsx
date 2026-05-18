@@ -6,6 +6,25 @@ import { useConnected } from "../../component/use-connected"
 import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
 
+function workflowPhaseIndicator(mode: string, phase: string, theme: any): { text: string; fg: string } | null {
+  if (mode === "spec" && phase === "plan") {
+    return { text: "SPEC:Plan", fg: theme.info }
+  }
+  if (mode === "spec" && phase === "execute") {
+    return { text: "SPEC:Exe", fg: theme.info }
+  }
+  if (mode === "spec" && phase === "verify") {
+    return { text: "SPEC:Verf", fg: theme.warning }
+  }
+  if (mode === "spec" && phase === "ship") {
+    return { text: "SPEC:Ship", fg: theme.success }
+  }
+  if (mode === "vibe") {
+    return { text: "VIBE", fg: theme.text }
+  }
+  return null
+}
+
 export function Footer() {
   const { theme } = useTheme()
   const sync = useSync()
@@ -19,6 +38,10 @@ export function Footer() {
   })
   const directory = useDirectory()
   const connected = useConnected()
+
+  const workflowIndicator = createMemo(() => {
+    return workflowPhaseIndicator(sync.data.workflow_mode, sync.data.workflow_phase, theme)
+  })
 
   const [store, setStore] = createStore({
     welcome: false,
@@ -52,6 +75,13 @@ export function Footer() {
   return (
     <box flexDirection="row" justifyContent="space-between" gap={1} flexShrink={0}>
       <box gap={1} flexDirection="row" flexShrink={0}>
+        <Show when={workflowIndicator()}>
+          {(indicator) => (
+            <text fg={indicator().fg}>
+              {indicator().text}
+            </text>
+          )}
+        </Show>
         <text fg={theme.textMuted}>{directory()}</text>
       </box>
       <box gap={2} flexDirection="row" flexShrink={0}>

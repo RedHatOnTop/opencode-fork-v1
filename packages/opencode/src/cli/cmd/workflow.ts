@@ -33,14 +33,29 @@ function formatModeDescription(mode: WorkflowMode): string {
 }
 
 /**
+ * Format phase description for display
+ */
+function formatPhaseDisplay(phase: string): string {
+  const phaseLabels: Record<string, string> = {
+    idle: "Idle (no pipeline active)",
+    plan: "Plan - Analyze & design before coding",
+    execute: "Execute - Implement the planned tasks",
+    verify: "Verify - Run tests, lint, typecheck",
+    ship: "Ship - Commit changes & summarize",
+  }
+  return phaseLabels[phase] ?? `${phase}`
+}
+
+/**
  * Get current mode display
  */
-async function getCurrentModeDisplay(): Promise<{ mode: WorkflowMode; config: ModeConfig }> {
+async function getCurrentModeDisplay(): Promise<{ mode: WorkflowMode; config: ModeConfig; phase?: string }> {
   const program = Effect.gen(function* () {
     const workflow = yield* WorkflowService
     const mode = yield* workflow.getMode()
     const config = yield* workflow.getConfig()
-    return { mode, config }
+    const phase = yield* workflow.getPhase()
+    return { mode, config, phase }
   })
 
   return Effect.runPromise(Effect.provide(program, workflowLayer) as any)
@@ -54,6 +69,19 @@ async function setMode(mode: WorkflowMode, specFile?: string): Promise<void> {
     const workflow = yield* WorkflowService
     yield* workflow.setMode(mode, { specFile })
     log.info("Workflow mode changed", { mode, specFile })
+  })
+
+  await Effect.runPromise(Effect.provide(program, workflowLayer) as any)
+}
+
+/**
+ * Abort spec pipeline (forceful mode switch)
+ */
+async function abortSpec(): Promise<void> {
+  const program = Effect.gen(function* () {
+    const workflow = yield* WorkflowService
+    yield* workflow.abortSpec()
+    yield* workflow.setMode("vibe")
   })
 
   await Effect.runPromise(Effect.provide(program, workflowLayer) as any)
@@ -85,7 +113,7 @@ export const SpecCommand = cmd({
       })
       .option("show", {
         alias: "s",
-        describe: "Show current mode and spec prompt",
+        describe: "Show current mode, phase, and spec prompt",
         type: "boolean",
         default: false,
       })
@@ -98,20 +126,23 @@ export const SpecCommand = cmd({
   },
   handler: async (args) => {
     await bootstrap(process.cwd(), async () => {
-      // Show current mode
+      // Show current mode with phase indicator
       if (args.show) {
-        const { mode, config } = await getCurrentModeDisplay()
+        const { mode, config, phase } = await getCurrentModeDisplay()
         UI.println(UI.Style.TEXT_INFO_BOLD + "Current Workflow Mode:" + UI.Style.TEXT_NORMAL)
         UI.println("")
         UI.println(`  Mode: ${mode === "spec" ? UI.Style.TEXT_SUCCESS_BOLD : UI.Style.TEXT_NORMAL_BOLD}${mode}${UI.Style.TEXT_NORMAL}`)
+        if (phase) {
+          UI.println(`  Phase: ${formatPhaseDisplay(phase)}`)
+        }
         UI.println(`  ${formatModeDescription(mode)}`)
-        
+
         if (config.specFile) {
           UI.println("")
           UI.println(UI.Style.TEXT_DIM + "Active spec file:" + UI.Style.TEXT_NORMAL)
           UI.println(`  ${config.specFile}`)
         }
-        
+
         UI.println("")
         UI.println(UI.Style.TEXT_DIM + "Configuration:" + UI.Style.TEXT_NORMAL)
         UI.println(`  Auto-convert tasks: ${config.autoConvertTasks}`)
@@ -139,18 +170,20 @@ export const SpecCommand = cmd({
       UI.println(UI.Style.TEXT_SUCCESS + "✓ Switched to SPEC mode" + UI.Style.TEXT_NORMAL)
       UI.println("")
       UI.println(formatModeDescription("spec"))
-      
+      UI.println("")
+      UI.println(UI.Style.TEXT_INFO + formatPhaseDisplay("plan") + UI.Style.TEXT_NORMAL)
+
       if (specFile) {
         UI.println("")
         UI.println(UI.Style.TEXT_INFO + "Loading spec file:" + UI.Style.TEXT_NORMAL)
         UI.println(`  ${specFile}`)
-        
+
         // Load spec file content
         const program = Effect.gen(function* () {
           const workflow = yield* WorkflowService
           return yield* workflow.loadSpec(specFile)
         })
-        
+
         try {
           const content = await Effect.runPromise(Effect.provide(program, workflowLayer) as any)
           UI.println("")
@@ -163,7 +196,7 @@ export const SpecCommand = cmd({
       }
 
       UI.println("")
-      UI.println(UI.Style.TEXT_DIM + "Hint: Type /vibe to switch back to quick exploration mode." + UI.Style.TEXT_NORMAL)
+      UI.println(UI.Style.TEXT_DIM + "Hint: Use the spec_advance tool to progress through phases (plan → execute → verify → ship)." + UI.Style.TEXT_NORMAL)
     })
   },
 })
@@ -172,13 +205,18 @@ export const SpecCommand = cmd({
  * /vibe command - Switch to vibe/exploration mode
  */
 export const VibeCommand = cmd({
-  command: "vibe",
+  command: "vibe [abort]",
   describe: "Switch to vibe mode for quick exploration",
   builder: (yargs: Argv) => {
     return yargs
+      .positional("abort", {
+        describe: "Use 'abort' to force switch when a spec pipeline is active",
+        type: "string",
+        choices: ["abort"] as const,
+      })
       .option("show", {
         alias: "s",
-        describe: "Show current mode and vibe prompt",
+        describe: "Show current mode, phase, and vibe prompt",
         type: "boolean",
         default: false,
       })
@@ -191,14 +229,17 @@ export const VibeCommand = cmd({
   },
   handler: async (args) => {
     await bootstrap(process.cwd(), async () => {
-      // Show current mode
+      // Show current mode with phase indicator
       if (args.show) {
-        const { mode, config } = await getCurrentModeDisplay()
+        const { mode, config, phase } = await getCurrentModeDisplay()
         UI.println(UI.Style.TEXT_INFO_BOLD + "Current Workflow Mode:" + UI.Style.TEXT_NORMAL)
         UI.println("")
         UI.println(`  Mode: ${mode === "vibe" ? UI.Style.TEXT_SUCCESS_BOLD : UI.Style.TEXT_NORMAL_BOLD}${mode}${UI.Style.TEXT_NORMAL}`)
+        if (phase) {
+          UI.println(`  Phase: ${formatPhaseDisplay(phase)}`)
+        }
         UI.println(`  ${formatModeDescription(mode)}`)
-        
+
         UI.println("")
         UI.println(UI.Style.TEXT_DIM + "Configuration:" + UI.Style.TEXT_NORMAL)
         UI.println(`  Auto-convert tasks: ${config.autoConvertTasks}`)
@@ -219,15 +260,33 @@ export const VibeCommand = cmd({
         return
       }
 
-      // Switch to vibe mode
-      await setMode("vibe")
+      // Handle abort: force switch by aborting spec pipeline first
+      if (args.abort === "abort") {
+        UI.println(UI.Style.TEXT_WARNING + "Aborting spec pipeline..." + UI.Style.TEXT_NORMAL)
+        await abortSpec()
+        UI.println(UI.Style.TEXT_SUCCESS + "✓ Spec pipeline aborted. Switched to VIBE mode" + UI.Style.TEXT_NORMAL)
+        UI.println("")
+        UI.println(formatModeDescription("vibe"))
+        UI.println("")
+        UI.println(UI.Style.TEXT_DIM + "Hint: Type /spec to switch to detailed planning mode." + UI.Style.TEXT_NORMAL)
+        return
+      }
 
-      UI.println(UI.Style.TEXT_SUCCESS + "✓ Switched to VIBE mode" + UI.Style.TEXT_NORMAL)
-      UI.println("")
-      UI.println(formatModeDescription("vibe"))
+      // Try to switch to vibe mode
+      try {
+        await setMode("vibe")
 
-      UI.println("")
-      UI.println(UI.Style.TEXT_DIM + "Hint: Type /spec to switch to detailed planning mode." + UI.Style.TEXT_NORMAL)
+        UI.println(UI.Style.TEXT_SUCCESS + "✓ Switched to VIBE mode" + UI.Style.TEXT_NORMAL)
+        UI.println("")
+        UI.println(formatModeDescription("vibe"))
+
+        UI.println("")
+        UI.println(UI.Style.TEXT_DIM + "Hint: Type /spec to switch to detailed planning mode." + UI.Style.TEXT_NORMAL)
+      } catch (error) {
+        UI.println(UI.Style.TEXT_WARNING + "Cannot switch to vibe mode while spec pipeline is active." + UI.Style.TEXT_NORMAL)
+        UI.println("")
+        UI.println(UI.Style.TEXT_DIM + "Use '/vibe abort' to forcefully abort the spec pipeline and switch to vibe mode." + UI.Style.TEXT_NORMAL)
+      }
     })
   },
 })
@@ -244,4 +303,24 @@ export function formatModeForStatus(mode: WorkflowMode): string {
   const indicator = indicators[mode]
   // @ts-ignore - dynamic style access
   return UI.Style[indicator.style] + indicator.text + UI.Style.TEXT_NORMAL
+}
+
+/**
+ * Format full status string including phase
+ */
+export function formatWorkflowStatus(mode: WorkflowMode, phase?: string): string {
+  const modeStr = formatModeForStatus(mode)
+  if (mode === "spec" && phase && phase !== "idle") {
+    const phaseLabels: Record<string, string> = {
+      plan: "Plan",
+      execute: "Exe",
+      verify: "Verf",
+      ship: "Ship",
+    }
+    const label = phaseLabels[phase]
+    if (label) {
+      return `${modeStr} > ${UI.Style.TEXT_INFO}${label}${UI.Style.TEXT_NORMAL}`
+    }
+  }
+  return modeStr
 }
