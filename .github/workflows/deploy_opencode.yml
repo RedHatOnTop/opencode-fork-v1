@@ -1,0 +1,50 @@
+name: Deploy OpenCode Fork OTA
+
+on:
+  workflow_dispatch: # 수동 트리거 전용
+
+jobs:
+  test:
+    name: Run Automated Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dummy Test
+        run: echo "Running OpenCode tests... Passed!"
+
+  build-and-deploy:
+    name: Package ZIP and Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Zip OpenCode Mod
+        run: |
+          mkdir -p dist_ota
+          # Exclude heavy node_modules to save space and upload time
+          zip -r dist_ota/opencode_mod_ota_v${{ github.run_number }}.zip . -x "*node_modules*" -x "*.git*"
+
+      - name: Deploy to Oracle Server via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USERNAME }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          source: "dist_ota/*"
+          target: "/var/www/ota/downloads"
+          strip_components: 1
+
+      - name: Create Symlinks and Auto-Cleanup
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USERNAME }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          script: |
+            cd /var/www/ota/downloads
+            ln -sf opencode_mod_ota_v${{ github.run_number }}.zip opencode_mod_ota.zip
+            ls -tp opencode_mod_ota_v*.zip | grep -v '/$' | tail -n +6 | xargs -I {} rm -- {} 2>/dev/null || true
+            echo "OpenCode OTA deployed and old versions cleaned!"
