@@ -4,6 +4,7 @@ import { describeRoute, resolver } from "hono-openapi"
 import { streamSSE } from "hono/streaming"
 import * as Log from "@opencode-ai/core/util/log"
 import { BusEvent } from "@/bus/bus-event"
+import { safeZodUnion } from "@/util/effect-zod"
 import { Bus } from "@/bus"
 import { AsyncQueue } from "@/util/queue"
 
@@ -22,7 +23,7 @@ export const EventRoutes = () =>
           content: {
             "text/event-stream": {
               schema: resolver(
-                z.union(BusEvent.payloads()).meta({
+                safeZodUnion(BusEvent.payloads()).meta({
                   ref: "Event",
                 }),
               ),

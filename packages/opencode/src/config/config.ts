@@ -320,6 +320,25 @@ export const Info = Schema.Struct({
   ).annotate({
     description: "Graphify knowledge graph feature. Turn any folder of code, docs, papers, images, or videos into a queryable knowledge graph.",
   }),
+  // Sandbox isolation configuration
+  sandbox: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Enable Docker sandbox isolation (default: true). When enabled, bash commands run inside an Alpine Linux container instead of directly on the host. Falls back to host mode if Docker is unavailable.",
+      }),
+      network: Schema.optional(Schema.Union([Schema.Literal("bridge"), Schema.Literal("none")])).annotate({
+        description:
+          "Docker network mode for the sandbox container. 'bridge' allows outbound network access. 'none' blocks all network traffic.",
+      }),
+      image: Schema.optional(Schema.String).annotate({
+        description: "Docker image to use for the sandbox container. Default: 'opencode-sandbox:alpine'.",
+      }),
+    }),
+  ).annotate({
+    description:
+      "Sandbox isolation settings. Runs AI agent commands inside a Docker container to protect the host system.",
+  }),
 })
   .annotate({ identifier: "Config" })
   .pipe(
@@ -830,15 +849,55 @@ export const layer = Layer.effect(
       const file = globalConfigFile()
       const before = (yield* readConfigFile(file)) ?? "{}"
       const patch = writableGlobal(config)
+      const existing = ConfigParse.effectSchema(Info, ConfigParse.jsonc(before, file), file)
+
+      const patchWithDeletes = { ...patch } as any
+
+      if (existing.provider && patch.provider) {
+        const providerPatch = { ...patch.provider } as any
+        for (const key of Object.keys(existing.provider)) {
+          if (!(key in patch.provider)) {
+            providerPatch[key] = undefined
+          }
+        }
+        patchWithDeletes.provider = providerPatch
+      } else if (existing.provider && "provider" in patch && patch.provider === undefined) {
+        patchWithDeletes.provider = undefined
+      }
+
+      if (existing.mcp && patch.mcp) {
+        const mcpPatch = { ...patch.mcp } as any
+        for (const key of Object.keys(existing.mcp)) {
+          if (!(key in patch.mcp)) {
+            mcpPatch[key] = undefined
+          }
+        }
+        patchWithDeletes.mcp = mcpPatch
+      } else if (existing.mcp && "mcp" in patch && patch.mcp === undefined) {
+        patchWithDeletes.mcp = undefined
+      }
 
       let next: Info
       if (!file.endsWith(".jsonc")) {
-        const existing = ConfigParse.effectSchema(Info, ConfigParse.jsonc(before, file), file)
-        const merged = mergeDeep(writable(existing), patch)
+        const merged = mergeDeep(writable(existing), patchWithDeletes) as any
+        if (merged.provider) {
+          for (const key of Object.keys(merged.provider)) {
+            if (merged.provider[key] === undefined) {
+              delete merged.provider[key]
+            }
+          }
+        }
+        if (merged.mcp) {
+          for (const key of Object.keys(merged.mcp)) {
+            if (merged.mcp[key] === undefined) {
+              delete merged.mcp[key]
+            }
+          }
+        }
         yield* fs.writeFileString(file, JSON.stringify(merged, null, 2)).pipe(Effect.orDie)
         next = merged
       } else {
-        const updated = patchJsonc(before, patch)
+        const updated = patchJsonc(before, patchWithDeletes)
         next = ConfigParse.effectSchema(Info, ConfigParse.jsonc(updated, file), file)
         yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }

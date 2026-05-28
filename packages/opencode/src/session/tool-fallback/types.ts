@@ -74,44 +74,5 @@ export const DEFAULT_FALLBACK_CONFIG: FallbackConfig = {
   timeoutMs: 30000,
 }
 
-// Tool prompt templates
-export const REACT_TEMPLATE = `You have access to the following tools:
-
-{toolDescriptions}
-
-When you need to use a tool, follow this exact format:
-
-Thought: [your reasoning about what tool to use and why]
-Action: [tool_name]
-Action Input: [JSON object with parameters]
-
-The system will execute the tool and respond with:
-Observation: [tool execution result]
-
-You can then continue with another tool or provide your final answer:
-Thought: [your reasoning about the observation]
-Final Answer: [your response to the user]
-
-Important:
-- Always include "Thought:" before "Action:"
-- Action Input must be valid JSON
-- Use Final Answer only when you have all the information needed`
-
-export const JSON_MODE_TEMPLATE = `You have access to the following tools:
-
-{toolDescriptions}
-
-When you need to use a tool, respond with ONLY a JSON object in this exact format:
-
-{
-  "tool_calls": [
-    {
-      "name": "tool_name",
-      "arguments": { ... }
-    }
-  ]
-}
-
-Do not include any text outside the JSON object when making tool calls.
-
-After receiving tool results, respond normally to the user.`
+// NOTE: Prompt templates are defined in prompts.ts (single source of truth).
+// Import from "./prompts" for the canonical templates.

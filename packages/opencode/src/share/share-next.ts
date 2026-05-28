@@ -288,10 +288,10 @@ export const layer = Layer.effect(
 
       yield* sync(sessionID, [
         { type: "session", data: { ...info, permission: info.permission?.filter((r) => r.action !== "queue") } as SDK.Session },
-        ...messages.map((item) => ({ type: "message" as const, data: item.info })),
-        ...messages.flatMap((item) => item.parts.map((part) => ({ type: "part" as const, data: part }))),
-        { type: "session_diff", data: diffs },
-        { type: "model", data: models },
+        ...messages.map((item) => ({ type: "message" as const, data: item.info as any })),
+        ...messages.flatMap((item) => item.parts.map((part) => ({ type: "part" as const, data: part as any }))),
+        { type: "session_diff", data: diffs as any },
+        { type: "model", data: models as any },
       ])
     })
 

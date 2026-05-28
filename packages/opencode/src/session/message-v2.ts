@@ -451,7 +451,12 @@ export type Part =
 // Errors are still NamedError-based Zod; bridge via ZodOverride so the derived
 // Zod + JSON Schema emit the original discriminatedUnion shape. Migrating the
 // error classes to Schema.TaggedErrorClass is a separate slice.
-const AssistantErrorZod = z.discriminatedUnion("name", [
+//
+// Guard: filter out any undefined schemas before passing to z.discriminatedUnion.
+// Zod v4 accesses `._zod` on every union member — if any member is undefined
+// (e.g. due to circular import or failed initialization), it crashes with
+// "TypeError: undefined is not an object (evaluating 'n._zod')".
+const _assistantErrorSchemas = [
   AuthError.Schema,
   NamedError.Unknown.Schema,
   OutputLengthError.Schema,
@@ -459,8 +464,25 @@ const AssistantErrorZod = z.discriminatedUnion("name", [
   StructuredOutputError.Schema,
   ContextOverflowError.Schema,
   APIError.Schema,
-])
-type AssistantError = z.infer<typeof AssistantErrorZod>
+].filter((s): s is NonNullable<typeof s> => s != null && typeof s === "object" && "_zod" in s)
+
+if (_assistantErrorSchemas.length < 7) {
+  console.error(
+    "[message-v2] AssistantErrorZod: some error schemas are undefined!",
+    {
+      total: _assistantErrorSchemas.length,
+      names: ["AuthError", "Unknown", "OutputLength", "Aborted", "StructuredOutput", "ContextOverflow", "APIError"],
+    },
+  )
+}
+
+const _fallbackErrorSchema = z.object({ name: z.string(), data: z.any() })
+const AssistantErrorZod = _assistantErrorSchemas.length >= 2
+  ? z.discriminatedUnion("name", _assistantErrorSchemas as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]])
+  : _assistantErrorSchemas.length === 1
+    ? _assistantErrorSchemas[0]
+    : _fallbackErrorSchema
+type AssistantError = { name: string; data: any }
 
 // ── Prompt input schemas ─────────────────────────────────────────────────────
 //

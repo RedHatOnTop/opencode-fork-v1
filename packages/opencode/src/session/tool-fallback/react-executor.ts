@@ -16,6 +16,7 @@ export interface ReActExecutorOptions {
   maxIterations: number
   toolResultInjection: "inline" | "separate-message"
   timeoutMs: number
+  abortSignal?: AbortSignal
 }
 
 export class ReActExecutor {
@@ -160,7 +161,8 @@ export class ReActExecutor {
     const steps: ReActStep[] = []
 
     // Pattern 1: Thought: ... Action: ... Action Input: ...
-    const actionPattern = /Thought:\s*([^\n]*)\n*Action:\s*([^\n]*)\n*Action Input:\s*({[\s\S]*?}|\[[\s\S]*?\]|[^\n]*)/gi
+    // Match both "Thought: ... Action: ..." and "Action: ..." (without Thought:) patterns
+    const actionPattern = /(?:Thought:\s*([^\n]*)\n*)?Action:\s*([^\n]*)\n*Action Input:\s*({[\s\S]*?}|\[[\s\S]*?\]|[^\n]*)/gi
     let match
 
     while ((match = actionPattern.exec(content)) !== null) {
@@ -253,7 +255,7 @@ export class ReActExecutor {
       const result = await tool.execute(step.arguments || {}, {
         toolCallId: this.generateId(),
         messages: [],
-        abortSignal: new AbortController().signal,
+        abortSignal: this.options.abortSignal ?? new AbortController().signal,
       })
 
       const output = typeof result === "string" ? result : JSON.stringify(result)

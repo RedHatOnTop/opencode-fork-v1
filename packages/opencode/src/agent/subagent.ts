@@ -16,6 +16,7 @@
 
 import { Schema, Context, Effect, Layer, Option } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
+import { InstanceState } from "@/effect/instance-state"
 import { Agent } from "./agent"
 
 const log = Log.create({ service: "subagent" })
@@ -326,11 +327,12 @@ export const layer = Layer.effect(
           return Option.none()
         }
 
-        const cwd = process.cwd()
+        const ctx = yield* InstanceState.context
+        const projectDir = ctx.directory ?? process.cwd()
         const markdownContent = yield* Effect.tryPromise(() =>
           import("fs/promises").then((fs) =>
             import("path").then((path) =>
-              fs.readFile(path.resolve(cwd, agent.markdownFile), "utf-8")
+              fs.readFile(path.resolve(projectDir, agent.markdownFile), "utf-8")
             )
           )
         ).pipe(Effect.orElseSucceed(() => undefined as string | undefined))

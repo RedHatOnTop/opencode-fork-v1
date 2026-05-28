@@ -130,17 +130,18 @@ export const layer = Layer.effect(
       const ctx = yield* InstanceState.context
 
       // Resolve context mentions (@current-errors, @git-diff, etc.) before file resolution
-      let resolvedTemplate = template
-      try {
-        const { Mention } = yield* Effect.promise(() => import("@/mention"))
+      const resolvedTemplate = yield* Effect.gen(function* () {
         const mentionService = yield* Mention.Service
         const mentionResult = yield* mentionService.resolveAll(template)
-        if (mentionResult.results.length > 0) {
-          resolvedTemplate = mentionResult.text
-        }
-      } catch {
-        // Mention module not available — skip mention resolution
-      }
+        return mentionResult.results.length > 0 ? mentionResult.text : template
+      }).pipe(
+        Effect.catchCause(() =>
+          Effect.sync(() => {
+            log.info("Mention resolution skipped")
+            return template
+          }),
+        ),
+      )
 
       const parts: PromptInput["parts"] = [{ type: "text", text: resolvedTemplate }]
       const files = ConfigMarkdown.files(resolvedTemplate)

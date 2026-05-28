@@ -6,7 +6,7 @@ import { Bus } from "@/bus"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
 import { TuiEvent } from "@/cli/cmd/tui/event"
-import { zodObject } from "@/util/effect-zod"
+import { zodObject, safeZodUnion } from "@/util/effect-zod"
 import { AsyncQueue } from "@/util/queue"
 import { errors } from "../../error"
 import { lazy } from "@/util/lazy"
@@ -345,7 +345,7 @@ export const TuiRoutes = lazy(() =>
       }),
       validator(
         "json",
-        z.union(
+        safeZodUnion(
           Object.values(TuiEvent).map((def) => {
             return z
               .object({

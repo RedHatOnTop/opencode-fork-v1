@@ -18,6 +18,7 @@ const log = Log.create({ service: "tool-fallback:json-mode" })
 export interface JsonModeExecutorOptions {
   maxIterations: number
   timeoutMs: number
+  abortSignal?: AbortSignal
 }
 
 export class JsonModeExecutor {
@@ -268,7 +269,7 @@ export class JsonModeExecutor {
       const result = await tool.execute(toolCall.arguments, {
         toolCallId: toolCall.id,
         messages: [],
-        abortSignal: new AbortController().signal,
+        abortSignal: this.options.abortSignal ?? new AbortController().signal,
       })
 
       const output = typeof result === "string" ? result : JSON.stringify(result)

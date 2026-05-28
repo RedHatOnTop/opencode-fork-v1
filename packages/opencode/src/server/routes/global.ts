@@ -3,6 +3,7 @@ import { describeRoute, resolver, validator } from "hono-openapi"
 import { streamSSE } from "hono/streaming"
 import { Effect, Schema } from "effect"
 import z from "zod"
+import { safeZodUnion } from "@/util/effect-zod"
 import { BusEvent } from "@/bus/bus-event"
 import { SyncEvent } from "@/sync"
 import { GlobalBus } from "@/bus/global"
@@ -110,7 +111,7 @@ export const GlobalRoutes = lazy(() =>
                       directory: z.string(),
                       project: z.string().optional(),
                       workspace: z.string().optional(),
-                      payload: z.union([...BusEvent.payloads(), ...SyncEvent.payloads()]),
+                      payload: safeZodUnion([...BusEvent.payloads(), ...SyncEvent.payloads()]),
                     })
                     .meta({
                       ref: "GlobalEvent",
@@ -223,7 +224,7 @@ export const GlobalRoutes = lazy(() =>
             content: {
               "application/json": {
                 schema: resolver(
-                  z.union([
+                  safeZodUnion([
                     z.object({
                       success: z.literal(true),
                       version: z.string(),

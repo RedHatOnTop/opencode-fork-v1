@@ -13,6 +13,8 @@ export const DESTRUCTIVE_PATTERNS = [
   // System-wide deletion
   /\brm\s+-rf\s+\/\s*$/,
   /\brm\s+-rf\s+\/\*/,
+  /\brm\s+-rf\s+~\/?/i,
+  /\brm\s+-rf\s+\/home\b/i,
   /\bmkfs\b/,
   /\bdd\s+if=/,
   /\bformat\s+[A-Z]:/i,
@@ -25,6 +27,20 @@ export const DESTRUCTIVE_PATTERNS = [
   /\brm\s+.*\/etc\/\*$/,
   /\brm\s+.*\/bin\/\*$/,
   /\brm\s+.*\/sbin\/\*$/,
+  // Chmod/chown root — could lock out the system
+  /\bchmod\s+-R\s+0{3,4}\s+\//,
+  /\bchown\s+-R\b.*\s+\/$/,
+  // Direct disk writes
+  />\s*\/dev\/(sda|sdb|sd\w|nvme|hd)\b/,
+  // Sudo destructive commands (relevant in Docker sandbox too)
+  /\bsudo\s+(rm|mkfs|dd|shutdown|reboot|poweroff|halt)\b/i,
+  // Windows-specific destructive commands
+  /\breg\s+delete\s+/i,
+  /\breg\s+add\s+HKLM\b/i,
+  /\bschtasks\s+\/create\b/i,
+  /\bsc\s+(config|stop|delete)\b/i,
+  /\bwmic\s+/i,
+  /\btaskkill\s+\/F\s+\/IM\s+(winlogon|csrss|lsass|services|svchost)\b/i,
 ] as const
 
 /**

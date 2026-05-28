@@ -267,7 +267,8 @@ const live: Layer.Layer<
                   specificationVersion: "v3" as const,
                   async transformParams(args) {
                     if (args.type === "stream") {
-                      // @ts-expect-error
+                      // @ts-expect-error - ProviderTransform.message signature is compatible at runtime
+                      // but the AI SDK v3 middleware types don't match the 2nd argument type
                       args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
                     }
                     return args.params
@@ -285,8 +286,8 @@ const live: Layer.Layer<
             const stream = fallbackService.executeWithFallback(
               [...messages],
               {
-                stream: async (msgs: ModelMessage[]) => {
-                  const result = await streamTextWrapper(msgs)
+                stream: async (msgs: ModelMessage[], toolParams?: Record<string, unknown>) => {
+                  const result = await streamTextWrapper(msgs, toolParams)
                   // Collect all events from the stream
                   const allEvents: any[] = []
                   for await (const event of result.fullStream) {
@@ -351,27 +352,29 @@ const live: Layer.Layer<
             result: e.result,
           }))
 
-        // Build fullStream from fallback events
-        const fullStream = (async function* () {
-          for (const event of fallbackStream.fallbackEvents) {
-            if (event.type === "text-delta") {
-              yield event
-            } else if (event.type === "tool-call") {
-              yield {
-                type: "tool-call" as const,
-                toolCallId: event.toolCallId,
-                toolName: event.toolName,
-                args: event.args,
+            // Build fullStream from fallback events
+            const fullStream = (async function* () {
+              for (const event of fallbackStream.fallbackEvents) {
+                if (event.type === "text-delta") {
+                  yield { type: "text-delta" as const, textDelta: event.textDelta }
+                } else if (event.type === "tool-call") {
+                  yield {
+                    type: "tool-call" as const,
+                    toolCallId: event.toolCallId,
+                    toolName: event.toolName,
+                    args: event.args,
+                  }
+                } else if (event.type === "tool-result") {
+                  yield {
+                    type: "tool-result" as const,
+                    toolCallId: event.toolCallId,
+                    result: event.result,
+                  }
+                } else if (event.type === "error") {
+                  yield { type: "error" as const, error: event.error }
+                }
               }
-            } else if (event.type === "tool-result") {
-              yield {
-                type: "tool-result" as const,
-                toolCallId: event.toolCallId,
-                result: event.result,
-              }
-            }
-          }
-        })()
+            })()
 
         return {
           text: Promise.resolve(textParts),
@@ -575,7 +578,8 @@ const live: Layer.Layer<
               specificationVersion: "v3" as const,
               async transformParams(args) {
                 if (args.type === "stream") {
-                  // @ts-expect-error
+                  // @ts-expect-error - ProviderTransform.message signature is compatible at runtime
+                  // but the AI SDK v3 middleware types don't match the 2nd argument type
                   args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
                 }
                 return args.params
