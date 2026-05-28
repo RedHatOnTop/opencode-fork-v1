@@ -22,9 +22,53 @@ import { Effect, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { InstanceState } from "@/effect/instance-state"
+import { Sandbox } from "@/sandbox/state"
 
 const MAX_METADATA_LENGTH = 30_000
 const DEFAULT_TIMEOUT = Flag.OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS || 2 * 60 * 1000
+
+/**
+ * Sensitive environment variable patterns that are filtered out
+ * before passing to the AI agent's execution environment when
+ * running inside a Docker sandbox.
+ *
+ * Prevents API keys, tokens, and other credentials from leaking into
+ * the container where the agent could exfiltrate them.
+ */
+const SENSITIVE_ENV_PATTERNS = [
+  /^ANTHROPIC_API_KEY$/i,
+  /^OPENAI_API_KEY$/i,
+  /^GEMINI_API_KEY$/i,
+  /^GOOGLE_API_KEY$/i,
+  /^COHERE_API_KEY$/i,
+  /^MISTRAL_API_KEY$/i,
+  /^DEEPSEEK_API_KEY$/i,
+  /^OPENROUTER_API_KEY$/i,
+  /^TOGETHER_API_KEY$/i,
+  /^GROQ_API_KEY$/i,
+  /^AWS_SECRET_ACCESS_KEY$/i,
+  /^AWS_SESSION_TOKEN$/i,
+  /^AZURE_OPENAI_API_KEY$/i,
+  /^GITHUB_TOKEN$/i,
+  /^GH_TOKEN$/i,
+  /^NPM_TOKEN$/i,
+  /^DOCKER_TOKEN$/i,
+  /^OPENCODE_PERMISSION$/i,
+  /^HOMEBREW_GITHUB_API_TOKEN$/i,
+  /^HF_TOKEN$/i,
+  /^HUGGINGFACE_TOKEN$/i,
+]
+
+function filterSensitiveEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (!Sandbox.isDocker) return env
+  const filtered: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(env)) {
+    const blocked = SENSITIVE_ENV_PATTERNS.some((pattern) => pattern.test(key))
+    if (!blocked) filtered[key] = value
+  }
+  return filtered
+}
+
 const CWD = new Set(["cd", "push-location", "set-location"])
 const FILES = new Set([
   ...CWD,
@@ -279,6 +323,42 @@ const ask = Effect.fn("BashTool.ask")(function* (ctx: Tool.Context, scan: Scan) 
 })
 
 function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
+  // When sandbox mode is active, route command execution through the
+  // Docker container via `docker exec`. The container provides an Alpine
+  // Linux environment that isolates the agent from the host.
+  if (Sandbox.isDocker && Sandbox.containerId) {
+    const safeEnv = filterSensitiveEnv(env)
+    const envArgs = Object.entries(safeEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`])
+    // Map host working directory to the mounted container path.
+    // The container mounts workspaceDir → /workspace, so any host path
+    // within the workspace is remapped to the corresponding /workspace subpath.
+    const workspaceDir = Sandbox.workspaceDir!
+    let containerCwd = "/workspace"
+    if (cwd && workspaceDir) {
+      // Case-insensitive prefix check for Windows hosts; preserve original casing
+      // for the Linux container path since Linux filesystems are case-sensitive.
+      const normCwd = cwd.replace(/\\/g, "/").toLowerCase()
+      const normWs = workspaceDir.replace(/\\/g, "/").toLowerCase()
+      const origCwd = cwd.replace(/\\/g, "/")
+      const origWs = workspaceDir.replace(/\\/g, "/")
+      if (normCwd.startsWith(normWs)) {
+        containerCwd = "/workspace" + origCwd.slice(origWs.length)
+      }
+    }
+    return ChildProcess.make("docker", [
+      ...envArgs,
+      "exec",
+      "-i",
+      "-w", containerCwd,
+      Sandbox.containerId,
+      "sh", "-c", command,
+    ], {
+      cwd,
+      stdin: "ignore",
+      detached: false,
+    })
+  }
+
   if (process.platform === "win32" && Shell.ps(shell)) {
     return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
       cwd,
@@ -399,10 +479,12 @@ export const BashTool = Tool.define(
         { cwd, sessionID: ctx.sessionID, callID: ctx.callID },
         { env: {} },
       )
-      return {
+      const merged = {
         ...process.env,
         ...extra.env,
       }
+      // Filter sensitive environment variables when running in Docker sandbox
+      return filterSensitiveEnv(merged)
     })
 
     const run = Effect.fn("BashTool.run")(function* (
@@ -570,9 +652,9 @@ export const BashTool = Tool.define(
         const shell = Shell.acceptable(cfg.shell)
         const name = Shell.name(shell)
         const chain =
-          name === "powershell"
-            ? "If the commands depend on each other and must run sequentially, avoid '&&' in this shell because Windows PowerShell 5.1 does not support it. Use PowerShell conditionals such as `cmd1; if ($?) { cmd2 }` when later commands must depend on earlier success."
-            : "If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together (e.g., `git add . && git commit -m \"message\" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp, Write before Bash for git operations, or git add before git commit), run these operations sequentially instead."
+          Sandbox.isDocker || name !== "powershell"
+            ? "If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together (e.g., `git add . && git commit -m \"message\" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp, Write before Bash for git operations, or git add before git commit), run these operations sequentially instead."
+            : "If the commands depend on each other and must run sequentially, avoid '&&' in this shell because Windows PowerShell 5.1 does not support it. Use PowerShell conditionals such as `cmd1; if ($?) { cmd2 }` when later commands must depend on earlier success."
         log.info("bash tool using shell", { shell })
 
         const limits = yield* trunc.limits()
@@ -580,8 +662,8 @@ export const BashTool = Tool.define(
 
         return {
           description: DESCRIPTION.replaceAll("${directory}", instance.directory)
-            .replaceAll("${os}", process.platform)
-            .replaceAll("${shell}", name)
+            .replaceAll("${os}", Sandbox.isDocker ? "linux" : process.platform)
+            .replaceAll("${shell}", Sandbox.isDocker ? "bash" : name)
             .replaceAll("${chaining}", chain)
             .replaceAll("${maxLines}", String(limits.maxLines))
             .replaceAll("${maxBytes}", String(limits.maxBytes)),
