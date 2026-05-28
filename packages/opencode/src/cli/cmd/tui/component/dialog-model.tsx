@@ -4,10 +4,11 @@ import { useSync } from "@tui/context/sync"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
-import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
+import { createDialogProviderOptions, DialogProviderList } from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
 import { DialogModelVisibility } from "./dialog-model-visibility"
 import { DialogDisconnectProvider } from "./dialog-disconnect-provider"
+import { DialogEditCustomProviderSelect } from "./dialog-add-custom-provider"
 import { useKeybind } from "../context/keybind"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
@@ -132,6 +133,14 @@ export function DialogModel(props: { providerID?: string }) {
           dialog.replace(() => <DialogDisconnectProvider />)
         }
       })
+      actions.push({
+        value: { providerID: "__action__", modelID: "edit-custom-provider" },
+        title: "Edit custom provider models",
+        category: "Actions",
+        onSelect: () => {
+          dialog.replace(() => <DialogEditCustomProviderSelect />)
+        }
+      })
     }
 
     if (needle) {
@@ -178,7 +187,7 @@ export function DialogModel(props: { providerID?: string }) {
           keybind: keybind.all.model_provider_list?.[0],
           title: connected() ? "Connect provider" : "View all providers",
           onTrigger() {
-            dialog.replace(() => <DialogProvider />)
+            dialog.replace(() => <DialogProviderList />)
           },
         },
         {

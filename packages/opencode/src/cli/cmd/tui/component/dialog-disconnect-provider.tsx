@@ -6,10 +6,9 @@ import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
 import { useToast } from "../ui/toast"
 import { isConsoleManagedProvider } from "@tui/util/provider-origin"
-import { Config } from "@/config/config"
 import { AppRuntime } from "@/effect/app-runtime"
+import { Config } from "@/config/config"
 import { Effect } from "effect"
-
 export function DialogDisconnectProvider() {
   const sync = useSync()
   const dialog = useDialog()
@@ -68,16 +67,14 @@ export function DialogDisconnectProvider() {
       await sdk.client.auth.remove({ providerID })
 
       await AppRuntime.runPromise(
-        Config.Service.use((cfg) =>
-          Effect.gen(function* () {
-            const currentCfg = yield* cfg.getGlobal()
-            if (currentCfg.provider?.[providerID]) {
-              const { [providerID]: _, ...rest } = currentCfg.provider
-              const newCfg = { ...currentCfg, provider: Object.keys(rest).length > 0 ? rest : undefined }
-              yield* cfg.updateGlobal(newCfg)
-            }
-          }),
-        ),
+        Config.Service.use((cfg) => Effect.gen(function* () {
+          const currentCfg = yield* cfg.getGlobal()
+          if (currentCfg && currentCfg.provider?.[providerID]) {
+            const { [providerID]: _, ...rest } = currentCfg.provider
+            const newCfg = { ...currentCfg, provider: Object.keys(rest).length > 0 ? rest : undefined }
+            yield* cfg.updateGlobal(newCfg)
+          }
+        }))
       )
 
       await sdk.client.instance.dispose()

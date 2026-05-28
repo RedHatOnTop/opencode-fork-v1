@@ -19,8 +19,7 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
-import { DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
-import { DialogAddCustomProvider } from "@tui/component/dialog-add-custom-provider"
+import { DialogProviderSettings, DialogProviderList } from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { ProjectProvider } from "@tui/context/project"
@@ -579,25 +578,15 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: "Connect provider",
-      value: "provider.connect",
+      title: "Manage providers",
+      value: "provider.settings",
       suggested: !connected(),
       slash: {
-        name: "connect",
+        name: "provider",
+        aliases: ["connect"],
       },
       onSelect: () => {
-        dialog.replace(() => <DialogProviderList />)
-      },
-      category: "Provider",
-    },
-    {
-      title: "Add custom provider",
-      value: "provider.add_custom",
-      slash: {
-        name: "add-custom",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogAddCustomProvider />)
+        dialog.replace(() => <DialogProviderSettings />)
       },
       category: "Provider",
     },

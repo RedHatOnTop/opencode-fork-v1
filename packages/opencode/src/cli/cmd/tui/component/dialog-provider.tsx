@@ -15,6 +15,8 @@ import * as Clipboard from "@tui/util/clipboard"
 import { useToast } from "../ui/toast"
 import { isConsoleManagedProvider } from "@tui/util/provider-origin"
 import { useConnected } from "./use-connected"
+import { DialogAddCustomProvider, DialogEditCustomProviderSelect } from "./dialog-add-custom-provider"
+import { DialogDisconnectProvider } from "./dialog-disconnect-provider"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   opencode: 0,
@@ -145,9 +147,54 @@ export function createDialogProviderOptions() {
   return options
 }
 
-export function DialogProvider() {
+export function DialogProviderList() {
   const options = createDialogProviderOptions()
   return <DialogSelect title="Connect a provider" options={options()} />
+}
+
+export function DialogProviderSettings() {
+  const dialog = useDialog()
+  const sync = useSync()
+
+  const options = createMemo(() => {
+    const opts = [
+      {
+        title: "Connect new provider",
+        value: "connect",
+        onSelect: () => dialog.replace(() => <DialogProviderList />),
+      },
+      {
+        title: "Add custom provider",
+        value: "add_custom",
+        onSelect: () => dialog.replace(() => <DialogAddCustomProvider />),
+      },
+    ]
+
+    const customProviders = Object.keys(sync.data.config.provider || {}).filter(
+      (id) =>
+        !["opencode", "openai", "anthropic", "google", "github-copilot", "google-vertex", "amazon-bedrock", "azure", "openrouter", "mistral", "gitlab"].includes(id)
+    )
+
+    if (customProviders.length > 0) {
+      opts.push({
+        title: "Edit custom provider models",
+        value: "edit_custom",
+        onSelect: () => dialog.replace(() => <DialogEditCustomProviderSelect />),
+      })
+    }
+
+    if (sync.data.provider_next.connected.length > 0) {
+      opts.push({
+        title: "Disconnect provider",
+        value: "disconnect",
+        onSelect: () => dialog.replace(() => <DialogDisconnectProvider />),
+      })
+    }
+
+    return opts
+  })
+
+  return <DialogSelect title="Manage providers" options={options()} />
 }
 
 interface AutoMethodProps {

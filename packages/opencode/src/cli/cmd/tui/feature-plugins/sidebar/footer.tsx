@@ -54,7 +54,7 @@ function View(props: { api: TuiPluginApi }) {
             </text>
             <box flexDirection="row" gap={1} justifyContent="space-between">
               <text fg={theme().text}>Connect provider</text>
-              <text fg={theme().textMuted}>/connect</text>
+              <text fg={theme().textMuted}>/provider</text>
             </box>
           </box>
         </box>

@@ -30,7 +30,7 @@ function parse(tip: string): TipPart[] {
   return parts
 }
 
-const NO_MODELS_TIP = "Run {highlight}/connect{/highlight} to add an AI provider and start coding"
+const NO_MODELS_TIP = "Run {highlight}/provider{/highlight} to add an AI provider and start coding"
 
 export function Tips(props: { connected?: boolean }) {
   const theme = useTheme().theme
@@ -70,7 +70,7 @@ const TIPS = [
   "Press {highlight}Ctrl+X X{/highlight} or {highlight}/export{/highlight} to save the conversation as Markdown",
   "Press {highlight}Ctrl+X Y{/highlight} to copy the assistant's last message to clipboard",
   "Press {highlight}Ctrl+P{/highlight} to see all available actions and commands",
-  "Run {highlight}/connect{/highlight} to add API keys for 75+ supported LLM providers",
+  "Run {highlight}/provider{/highlight} to add API keys for 75+ supported LLM providers",
   "The leader key is {highlight}Ctrl+X{/highlight}; combine with other keys for quick actions",
   "Press {highlight}F2{/highlight} to quickly switch between recently used models",
   "Press {highlight}Ctrl+X B{/highlight} to show/hide the sidebar panel",
@@ -146,7 +146,7 @@ const TIPS = [
   "Enable {highlight}scroll_acceleration{/highlight} in {highlight}tui.json{/highlight} for smooth macOS-style scrolling",
   "Toggle username display in chat via command palette ({highlight}Ctrl+P{/highlight})",
   "Run {highlight}docker run -it --rm ghcr.io/anomalyco/opencode{/highlight} for containerized use",
-  "Use {highlight}/connect{/highlight} with OpenCode Zen for curated, tested models",
+  "Use {highlight}/provider{/highlight} with OpenCode Zen for curated, tested models",
   "Commit your project's {highlight}AGENTS.md{/highlight} file to Git for team sharing",
   "Use {highlight}/review{/highlight} to review uncommitted changes, branches, or PRs",
   "Run {highlight}/help{/highlight} or {highlight}Ctrl+X H{/highlight} to show the help dialog",

@@ -27,6 +27,7 @@ import { BashTool } from "../../tool/bash"
 import { TodoWriteTool } from "../../tool/todo"
 import { Locale } from "@/util/locale"
 import { AppRuntime } from "@/effect/app-runtime"
+import * as SandboxLifecycle from "@/sandbox/lifecycle"
 
 type ToolProps<T> = {
   input: Tool.InferParameters<T>
@@ -298,6 +299,19 @@ export const RunCommand = cmd({
         type: "boolean",
         describe: "auto-approve permissions that are not explicitly denied (dangerous!)",
         default: false,
+      })
+      .option("sandbox", {
+        type: "string",
+        describe:
+          "Sandbox isolation mode: 'docker' runs bash commands in an Alpine Linux container (default), 'off' disables isolation.",
+        choices: ["docker", "off"],
+        default: "docker",
+      })
+      .option("sandbox-network", {
+        type: "string",
+        describe: "Docker sandbox network mode: 'bridge' allows outbound traffic, 'none' blocks all network access.",
+        choices: ["bridge", "none"],
+        default: "bridge",
       })
   },
   handler: async (args) => {
@@ -631,29 +645,42 @@ export const RunCommand = cmd({
       }
       await share(sdk, sessionID)
 
-      loop().catch((e) => {
-        console.error(e)
-        process.exit(1)
-      })
+      // Sandbox lifecycle: start Docker container before agent execution
+      const sandboxNetwork = (args["sandbox-network"] as "bridge" | "none" | undefined) ?? "bridge"
+      const sandboxConfig = { enabled: args.sandbox !== "off", network: sandboxNetwork }
+      const sandboxResult = await SandboxLifecycle.start(directory ?? process.cwd(), sessionID, sandboxConfig)
+      if (sandboxResult.warning) {
+        UI.println(UI.Style.TEXT_WARNING + sandboxResult.warning + UI.Style.TEXT_NORMAL)
+      }
 
-      if (args.command) {
-        await sdk.session.command({
-          sessionID,
-          agent,
-          model: args.model,
-          command: args.command,
-          arguments: message,
-          variant: args.variant,
+      try {
+        loop().catch((e) => {
+          console.error(e)
+          process.exit(1)
         })
-      } else {
-        const model = args.model ? Provider.parseModel(args.model) : undefined
-        await sdk.session.prompt({
-          sessionID,
-          agent,
-          model,
-          variant: args.variant,
-          parts: [...files, { type: "text", text: message }],
-        })
+
+        if (args.command) {
+          await sdk.session.command({
+            sessionID,
+            agent,
+            model: args.model,
+            command: args.command,
+            arguments: message,
+            variant: args.variant,
+          })
+        } else {
+          const model = args.model ? Provider.parseModel(args.model) : undefined
+          await sdk.session.prompt({
+            sessionID,
+            agent,
+            model,
+            variant: args.variant,
+            parts: [...files, { type: "text", text: message }],
+          })
+        }
+      } finally {
+        // Sandbox lifecycle: clean up Docker container when session ends
+        await SandboxLifecycle.stop()
       }
     }
 
