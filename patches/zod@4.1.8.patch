@@ -1,0 +1,133 @@
+diff --git a/v4/core/schemas.js b/v4/core/schemas.js
+index b8cd57b294ca413e9a36d593dd0ecac6b75306c9..39c2c76fd946b75f8f4490fb113bef2f9d5f9326 100644
+--- a/v4/core/schemas.js
++++ b/v4/core/schemas.js
+@@ -917,24 +917,36 @@ function handleUnionResults(results, final, inst, ctx) {
+     return final;
+ }
+ export const $ZodUnion = /*@__PURE__*/ core.$constructor("$ZodUnion", (inst, def) => {
++    // PATCH: Filter out undefined/null options to prevent "n._zod" crash
++    const _origLen = def.options.length;
++    def.options = def.options.filter((o) => o != null && typeof o === "object" && "_zod" in o);
++    if (def.options.length !== _origLen) {
++        if (process.env.OPENCODE_ZOD_DEBUG) {
++            console.error(`[ZOD-PATCH] $ZodUnion: filtered ${_origLen - def.options.length} invalid options (was ${_origLen}, now ${def.options.length}). Stack:`, new Error().stack);
++        }
++    }
++    if (def.options.length === 0) {
++        // Create a minimal never-union to avoid crash
++        def.options = [inst]; // self-reference won't be used
++    }
+     $ZodType.init(inst, def);
+-    util.defineLazy(inst._zod, "optin", () => def.options.some((o) => o._zod.optin === "optional") ? "optional" : undefined);
+-    util.defineLazy(inst._zod, "optout", () => def.options.some((o) => o._zod.optout === "optional") ? "optional" : undefined);
++    util.defineLazy(inst._zod, "optin", () => def.options.some((o) => o?._zod?.optin === "optional") ? "optional" : undefined);
++    util.defineLazy(inst._zod, "optout", () => def.options.some((o) => o?._zod?.optout === "optional") ? "optional" : undefined);
+     util.defineLazy(inst._zod, "values", () => {
+-        if (def.options.every((o) => o._zod.values)) {
++        if (def.options.every((o) => o?._zod?.values)) {
+             return new Set(def.options.flatMap((option) => Array.from(option._zod.values)));
+         }
+         return undefined;
+     });
+     util.defineLazy(inst._zod, "pattern", () => {
+-        if (def.options.every((o) => o._zod.pattern)) {
++        if (def.options.every((o) => o?._zod?.pattern)) {
+             const patterns = def.options.map((o) => o._zod.pattern);
+             return new RegExp(`^(${patterns.map((p) => util.cleanRegex(p.source)).join("|")})$`);
+         }
+         return undefined;
+     });
+     const single = def.options.length === 1;
+-    const first = def.options[0]._zod.run;
++    const first = def.options[0]?._zod?.run;
+     inst._zod.parse = (payload, ctx) => {
+         if (single) {
+             return first(payload, ctx);
+@@ -966,11 +978,20 @@ export const $ZodUnion = /*@__PURE__*/ core.$constructor("$ZodUnion", (inst, def
+ export const $ZodDiscriminatedUnion = 
+ /*@__PURE__*/
+ core.$constructor("$ZodDiscriminatedUnion", (inst, def) => {
++    // PATCH: Filter out undefined/null options before processing
++    const _origLen = def.options.length;
++    def.options = def.options.filter((o) => o != null && typeof o === "object" && "_zod" in o);
++    if (def.options.length !== _origLen) {
++        if (process.env.OPENCODE_ZOD_DEBUG) {
++            console.error(`[ZOD-PATCH] $ZodDiscriminatedUnion: filtered ${_origLen - def.options.length} invalid options (was ${_origLen}, now ${def.options.length}). Stack:`, new Error().stack);
++        }
++    }
+     $ZodUnion.init(inst, def);
+     const _super = inst._zod.parse;
+     util.defineLazy(inst._zod, "propValues", () => {
+         const propValues = {};
+         for (const option of def.options) {
++            if (!option?._zod?.propValues) continue;
+             const pv = option._zod.propValues;
+             if (!pv || Object.keys(pv).length === 0)
+                 throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(option)}"`);
+diff --git a/v4/core/to-json-schema.cjs b/v4/core/to-json-schema.cjs
+index c95291e1d92b6e27a85f5a00dcbb662ff76ed9b7..cb17343e6e45ae07d59d681cf65188abfd7e68c2 100644
+--- a/v4/core/to-json-schema.cjs
++++ b/v4/core/to-json-schema.cjs
+@@ -16,6 +16,14 @@ class JSONSchemaGenerator {
+     }
+     process(schema, _params = { path: [], schemaPath: [] }) {
+         var _a;
++        // PATCH: Guard against undefined or non-Zod schema inputs.
++        // See zod issue #5821 / PR #5822.
++        if (!schema || !schema._zod) {
++            if (process.env.OPENCODE_ZOD_DEBUG) {
++                console.error(`[ZOD-PATCH] to-json-schema.process: invalid schema input (got ${schema === undefined ? "undefined" : typeof schema}). Returning {}. Stack:`, new Error().stack);
++            }
++            return {};
++        }
+         const def = schema._zod.def;
+         const formatMap = {
+             guid: "uuid",
+@@ -817,6 +825,9 @@ function toJSONSchema(input, _params) {
+     return gen.emit(input, _params);
+ }
+ function isTransforming(_schema, _ctx) {
++    // PATCH: Guard against undefined or non-Zod schema inputs.
++    // See zod issue #5821 / PR #5822.
++    if (!_schema || !_schema._zod) return false;
+     const ctx = _ctx ?? { seen: new Set() };
+     if (ctx.seen.has(_schema))
+         return false;
+diff --git a/v4/core/to-json-schema.js b/v4/core/to-json-schema.js
+index a0911b38b7e0ee1ed3807630406f0aa967aabb35..f9d83991da3865d4283f5932c01a47237892ea05 100644
+--- a/v4/core/to-json-schema.js
++++ b/v4/core/to-json-schema.js
+@@ -12,6 +12,18 @@ export class JSONSchemaGenerator {
+     }
+     process(schema, _params = { path: [], schemaPath: [] }) {
+         var _a;
++        // PATCH: Guard against undefined or non-Zod schema inputs.
++        // Recursive calls from record/map/set/pipe/etc. can pass def.valueType
++        // or other inner types that may be undefined for schemas generated from
++        // JSON Schema -> Zod conversion. Without this guard, the next line
++        // crashes with "TypeError: undefined is not an object (evaluating 'n._zod')".
++        // Upstream fix: https://github.com/colinhacks/zod/pull/5822
++        if (!schema || !schema._zod) {
++            if (process.env.OPENCODE_ZOD_DEBUG) {
++                console.error(`[ZOD-PATCH] to-json-schema.process: invalid schema input (got ${schema === undefined ? "undefined" : typeof schema}). Returning {}. Stack:`, new Error().stack);
++            }
++            return {};
++        }
+         const def = schema._zod.def;
+         const formatMap = {
+             guid: "uuid",
+@@ -812,6 +824,13 @@ export function toJSONSchema(input, _params) {
+     return gen.emit(input, _params);
+ }
+ function isTransforming(_schema, _ctx) {
++    // PATCH: Guard against undefined or non-Zod schema inputs.
++    // Recursive calls (from record/map/set/pipe/etc.) may pass def.valueType
++    // which can be undefined for schemas generated via JSON Schema -> Zod
++    // conversion. Without this guard the call below crashes with:
++    //   "TypeError: undefined is not an object (evaluating '_schema._zod')"
++    // Upstream fix: https://github.com/colinhacks/zod/pull/5822
++    if (!_schema || !_schema._zod) return false;
+     const ctx = _ctx ?? { seen: new Set() };
+     if (ctx.seen.has(_schema))
+         return false;

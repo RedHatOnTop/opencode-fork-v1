@@ -59,6 +59,26 @@ export function toJsonSchema<S extends Schema.Top>(schema: S) {
   return z.toJSONSchema(zod(schema), { io: "input" })
 }
 
+/**
+ * Safely create a ZodUnion from an array of types, avoiding crashes if the
+ * array contains fewer than 2 elements or has undefined entries (which would
+ * cause "TypeError: undefined is not an object (evaluating 'n._zod')" in the
+ * Zod v4 union internals when it iterates options to read `_zod.optin` /
+ * `_zod.optout` / `_zod.values`).
+ */
+export function safeZodUnion(types: z.ZodTypeAny[]): z.ZodTypeAny {
+  // Filter out entries that are falsy OR missing the `_zod` internal marker
+  // that Zod v4 requires on every union member.
+  const defined = types.filter(
+    (t): t is z.ZodTypeAny => t != null && typeof t === "object" && "_zod" in t,
+  )
+  if (defined.length === 0) return z.never()
+  if (defined.length === 1) return defined[0]
+  return z.union(defined as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]])
+}
+
+const DIAGNOSTIC_TAG = "[effect-zod:_zod-fix]"
+
 function walk(ast: SchemaAST.AST): z.ZodTypeAny {
   const cached = walkCache.get(ast)
   if (cached) return cached
@@ -264,11 +284,23 @@ function body(ast: SchemaAST.AST): z.ZodTypeAny {
 function opt(ast: SchemaAST.AST): z.ZodTypeAny {
   if (ast._tag !== "Union") return fail(ast)
   const items = ast.types.filter((item) => item._tag !== "Undefined")
+  const walked = items.map(walk).filter(Boolean) as z.ZodTypeAny[]
+
+  // Diagnostic: detect invalid entries that would crash Zod v4's z.union()
+  if (walked.some((entry) => entry == null || !("_zod" in entry))) {
+    const bad = walked.map((e, i) => ({ index: i, type: typeof e, hasZod: e != null && "_zod" in e }))
+    console.warn(DIAGNOSTIC_TAG, "opt(): filtered union entries contain non-Zod values", {
+      tag: ast._tag,
+      total: walked.length,
+      bad,
+    })
+  }
+
   const inner =
-    items.length === 1
-      ? walk(items[0])
-      : items.length > 1
-        ? z.union(items.map(walk) as [z.ZodTypeAny, z.ZodTypeAny, ...Array<z.ZodTypeAny>])
+    walked.length === 1
+      ? walked[0]
+      : walked.length > 1
+        ? safeZodUnion(walked)
         : z.undefined()
   // Schema.withDecodingDefault attaches an encoding `Link` whose transformation
   // decode Getter resolves `Option.none()` to `Option.some(default)`.  Invoke
@@ -310,16 +342,41 @@ function union(ast: SchemaAST.Union): z.ZodTypeAny {
     return z.enum(ast.types.map((t) => (t as SchemaAST.Literal).literal as string) as [string, ...string[]])
   }
 
-  const items = ast.types.map(walk)
+  const items = ast.types.map(walk).filter(Boolean) as z.ZodTypeAny[]
+
+  // Diagnostic: detect invalid entries that would crash Zod v4's z.union()
+  if (items.some((entry) => entry == null || !("_zod" in entry))) {
+    const bad = items.map((e, i) => ({ index: i, type: typeof e, hasZod: e != null && "_zod" in e }))
+    console.warn(DIAGNOSTIC_TAG, "union(): mapped union entries contain non-Zod values", {
+      identifier: ast.annotations?.identifier,
+      total: items.length,
+      originalTypes: ast.types.length,
+      bad,
+    })
+  }
+
   if (items.length === 1) return items[0]
   if (items.length < 2) return fail(ast)
 
   const discriminator = ast.annotations?.discriminator
   if (typeof discriminator === "string") {
-    return z.discriminatedUnion(discriminator, items as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]])
+    // Filter out any invalid entries before passing to discriminatedUnion
+    const validItems = items.filter(
+      (t): t is z.ZodObject<any> => t != null && typeof t === "object" && "_zod" in t,
+    )
+    if (validItems.length !== items.length) {
+      console.warn(DIAGNOSTIC_TAG, "union(): discriminatedUnion filtered out invalid entries", {
+        identifier: ast.annotations?.identifier,
+        discriminator,
+        original: items.length,
+        valid: validItems.length,
+      })
+    }
+    if (validItems.length < 2) return safeZodUnion(validItems)
+    return z.discriminatedUnion(discriminator, validItems as [z.ZodObject<any>, z.ZodObject<any>, ...z.ZodObject<any>[]])
   }
 
-  return z.union(items as [z.ZodTypeAny, z.ZodTypeAny, ...Array<z.ZodTypeAny>])
+  return safeZodUnion(items)
 }
 
 function object(ast: SchemaAST.Objects): z.ZodTypeAny {
