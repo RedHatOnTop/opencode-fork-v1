@@ -346,7 +346,6 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
-<<<<<<< ours
   // Notification configuration (R27)
   notification: Schema.optional(
     Schema.Struct({
@@ -392,13 +391,6 @@ export const Info = Schema.Struct({
   }),
 })
   .annotate({ identifier: "Config" })
-  .pipe(
-    withStatics((s) => ({
-      zod: (zod(s) as unknown as z.ZodObject<any>).strict().meta({ ref: "Config" }) as unknown as z.ZodType<
-        DeepMutable<Schema.Schema.Type<typeof s>>
-      >,
-    })),
-  )
 
 // Uses the shared `DeepMutable` from `@opencode-ai/core/schema`. See the definition
 // there for why the local variant is needed over `Types.DeepMutable` from

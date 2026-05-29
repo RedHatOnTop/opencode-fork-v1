@@ -791,7 +791,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
                 dialog.replace(() => <DialogConsoleOrg />)
               },
               category: "Provider",
->>>>>>> upstream/dev
             },
           ]
         : []),

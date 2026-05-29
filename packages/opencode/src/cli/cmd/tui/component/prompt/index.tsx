@@ -1122,7 +1122,6 @@ export function Prompt(props: PromptProps) {
 
     // Capture mode before it gets reset
     const currentMode = store.mode
-    const variant = local.model.variant.current()
     const thinkingEffort = local.model.thinkingEffort.current()
     const editorSelection = editorContext()
     const editorParts =
