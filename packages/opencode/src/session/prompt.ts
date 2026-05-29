@@ -134,7 +134,7 @@ export const layer = Layer.effect(
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
-        resolvePromptParts: (template: string) => resolvePromptParts(template),
+        resolvePromptParts: (template: string) => resolvePromptParts(template).pipe(Effect.orDie) as any,
         prompt: (input: PromptInput) => prompt(input).pipe(Effect.catch(Effect.die)),
       } satisfies TaskPromptOps
     })
@@ -1650,13 +1650,14 @@ export const layer = Layer.effect(
       loop,
       shell,
       command: command as Interface["command"],
-      resolvePromptParts: resolvePromptParts as Interface["resolvePromptParts"],
+      resolvePromptParts: resolvePromptParts as any,
     })
   }),
 )
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
+    // 1. Feature layers (depend on many things)
     Layer.provide(SessionRunState.defaultLayer),
     Layer.provide(SessionStatus.defaultLayer),
     Layer.provide(SessionCompaction.defaultLayer),
@@ -1667,28 +1668,26 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(LSP.defaultLayer),
     Layer.provide(ToolRegistry.defaultLayer),
     Layer.provide(Truncate.defaultLayer),
-    Layer.provide(Provider.defaultLayer),
-    Layer.provide(Config.defaultLayer),
     Layer.provide(Instruction.defaultLayer),
-    Layer.provide(AppFileSystem.defaultLayer),
-    Layer.provide(Plugin.defaultLayer),
     Layer.provide(Session.defaultLayer),
     Layer.provide(SessionRevert.defaultLayer),
     Layer.provide(SessionSummary.defaultLayer),
     Layer.provide(Mention.defaultLayer),
     Layer.provide(Image.defaultLayer),
-    Layer.provide(
-      Layer.mergeAll(
-        EventV2Bridge.defaultLayer,
-        Agent.defaultLayer,
-        SystemPrompt.defaultLayer,
-        LLM.defaultLayer,
-        Reference.defaultLayer,
-        Bus.layer,
-        CrossSpawnSpawner.defaultLayer,
-        RuntimeFlags.defaultLayer,
-      ),
-    ),
+    Layer.provide(Provider.defaultLayer),
+    Layer.provide(Plugin.defaultLayer),
+    Layer.provide(Agent.defaultLayer),
+    Layer.provide(SystemPrompt.defaultLayer),
+    Layer.provide(LLM.defaultLayer),
+    Layer.provide(Reference.defaultLayer),
+    Layer.provide(CrossSpawnSpawner.defaultLayer),
+    
+    // 2. Foundational layers (depended on by features above)
+    Layer.provide(EventV2Bridge.defaultLayer),
+    Layer.provide(AppFileSystem.defaultLayer),
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(RuntimeFlags.defaultLayer),
+    Layer.provide(Bus.layer),
   ),
 )
 const ModelRef = Schema.Struct({
