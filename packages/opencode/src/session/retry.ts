@@ -2,10 +2,14 @@ import type { NamedError } from "@opencode-ai/core/util/error"
 import { Cause, Clock, Duration, Effect, Schedule } from "effect"
 import { MessageV2 } from "./message-v2"
 import { iife } from "@/util/iife"
+import { isRecord } from "@/util/record"
 
 export type Err = ReturnType<NamedError["toObject"]>
 
 // Go subscription upsell removed in this fork - users bring their own API keys
+export type Retryable = {
+  message: string
+}
 
 export const RETRY_INITIAL_DELAY = 2000
 export const RETRY_BACKOFF_FACTOR = 2
@@ -49,7 +53,7 @@ export function delay(attempt: number, error?: MessageV2.APIError) {
   return cap(Math.min(RETRY_INITIAL_DELAY * Math.pow(RETRY_BACKOFF_FACTOR, attempt - 1), RETRY_MAX_DELAY_NO_HEADERS))
 }
 
-export function retryable(error: Err) {
+export function retryable(error: Err, provider: string) {
   // context overflow errors should not be retried
   if (MessageV2.ContextOverflowError.isInstance(error)) return undefined
   if (MessageV2.APIError.isInstance(error)) {
@@ -58,11 +62,11 @@ export function retryable(error: Err) {
     // even when the provider SDK doesn't explicitly mark them as retryable.
     if (!error.data.isRetryable && !(status !== undefined && status >= 500)) return undefined
     // FreeUsageLimitError check removed - this fork uses BYOK (Bring Your Own Key) model
-    return error.data.message.includes("Overloaded") ? "Provider is overloaded" : error.data.message
+    return { message: error.data.message.includes("Overloaded") ? "Provider is overloaded" : error.data.message }
   }
 
   // Check for rate limit patterns in plain text error messages
-  const msg = error.data?.message
+  const msg = isRecord(error.data) ? error.data.message : undefined
   if (typeof msg === "string") {
     const lower = msg.toLowerCase()
     if (
@@ -70,46 +74,67 @@ export function retryable(error: Err) {
       lower.includes("rate limit") ||
       lower.includes("too many requests")
     ) {
-      return msg
+      return { message: msg }
     }
   }
 
-  const json = iife(() => {
-    try {
-      if (typeof error.data?.message !== "string") return undefined
-      return JSON.parse(error.data.message)
-    } catch {
-      return undefined
-    }
-  })
+  const json = parseJSON(msg)
   if (!json || typeof json !== "object") return undefined
   const code = typeof json.code === "string" ? json.code : ""
 
   if (json.type === "error" && json.error?.type === "too_many_requests") {
-    return "Too Many Requests"
+    return { message: "Too Many Requests" }
   }
   if (code.includes("exhausted") || code.includes("unavailable")) {
-    return "Provider is overloaded"
+    return { message: "Provider is overloaded" }
   }
   if (json.type === "error" && typeof json.error?.code === "string" && json.error.code.includes("rate_limit")) {
-    return "Rate Limited"
+    return { message: "Rate Limited" }
   }
   return undefined
 }
 
+function str(value: unknown) {
+  if (value === undefined || value === null) return ""
+  return String(value)
+}
+
+function num(value: unknown) {
+  const parsed = Number.parseFloat(str(value))
+  if (Number.isNaN(parsed)) return undefined
+  return parsed
+}
+
+function parseJSON(value: unknown) {
+  return iife(() => {
+    try {
+      if (typeof value !== "string") return undefined
+      return JSON.parse(value)
+    } catch {
+      return undefined
+    }
+  })
+}
+
 export function policy(opts: {
+  provider: string
   parse: (error: unknown) => Err
-  set: (input: { attempt: number; message: string; next: number }) => Effect.Effect<void>
+  set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
 }) {
   return Schedule.fromStepWithMetadata(
     Effect.succeed((meta: Schedule.InputMetadata<unknown>) => {
       const error = opts.parse(meta.input)
-      const message = retryable(error)
-      if (!message) return Cause.done(meta.attempt)
+      const retry = retryable(error, opts.provider)
+      if (!retry) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
         const wait = delay(meta.attempt, MessageV2.APIError.isInstance(error) ? error : undefined)
         const now = yield* Clock.currentTimeMillis
-        yield* opts.set({ attempt: meta.attempt, message, next: now + wait })
+        yield* opts.set({
+          attempt: meta.attempt,
+          message: retry.message,
+          action: retry.action,
+          next: now + wait,
+        })
         return [meta.attempt, Duration.millis(wait)] as [number, Duration.Duration]
       })
     }),

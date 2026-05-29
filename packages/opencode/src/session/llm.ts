@@ -1,13 +1,15 @@
 import { Provider } from "@/provider/provider"
+import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import * as Log from "@opencode-ai/core/util/log"
-import { Context, Effect, Layer, Record } from "effect"
+import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
-import { streamText, wrapLanguageModel, type ModelMessage, type Tool, tool, jsonSchema } from "ai"
-import { mergeDeep, pipe } from "remeda"
+import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
+import type { LLMEvent } from "@opencode-ai/llm"
+import { LLMClient, RequestExecutor, WebSocketExecutor } from "@opencode-ai/llm/route"
+import type { LLMClientService } from "@opencode-ai/llm/route"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
 import { ProviderTransform } from "@/provider/transform"
 import { Config } from "@/config/config"
-import { Instance } from "@/project/instance"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
 import { Plugin } from "@/plugin"
@@ -20,14 +22,16 @@ import { Bus } from "@/bus"
 import { Wildcard } from "@/util/wildcard"
 import { SessionID } from "@/session/schema"
 import { Auth } from "@/auth"
-import { Installation } from "@/installation"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { EffectBridge } from "@/effect/bridge"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
+import * as OtelTracer from "@effect/opentelemetry/Tracer"
+import { LLMAISDK } from "./llm/ai-sdk"
+import { LLMNativeRuntime } from "./llm/native-runtime"
+import { LLMRequestPrep } from "./llm/request"
 
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
-type Result = Awaited<ReturnType<typeof streamText>>
 
 export type StreamInput = {
   user: MessageV2.User
@@ -49,18 +53,24 @@ export type StreamRequest = StreamInput & {
   abort: AbortSignal
 }
 
-export type Event = Result["fullStream"] extends AsyncIterable<infer T> ? T : never
-
 export interface Interface {
-  readonly stream: (input: StreamInput) => Stream.Stream<Event, unknown>
+  readonly stream: (input: StreamInput) => Stream.Stream<LLMEvent, unknown>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/LLM") {}
 
+export const use = serviceUse(Service)
+
 const live: Layer.Layer<
   Service,
   never,
-  Auth.Service | Config.Service | Provider.Service | Plugin.Service | Permission.Service
+  | Auth.Service
+  | Config.Service
+  | Provider.Service
+  | Plugin.Service
+  | Permission.Service
+  | LLMClientService
+  | RuntimeFlags.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -69,6 +79,8 @@ const live: Layer.Layer<
     const provider = yield* Provider.Service
     const plugin = yield* Plugin.Service
     const perm = yield* Permission.Service
+    const llmClient = yield* LLMClient.Service
+    const flags = yield* RuntimeFlags.Service
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
       const l = log
@@ -94,38 +106,18 @@ const live: Layer.Layer<
         { concurrency: "unbounded" },
       )
 
-      // TODO: move this to a proper hook
-      const isOpenaiOauth = item.id === "openai" && info?.type === "oauth"
-
-      const system: string[] = []
-      system.push(
-        [
-          // use agent prompt otherwise provider prompt
-          ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
-          // any custom prompt passed into this call
-          ...input.system,
-          // any custom prompt from last user message
-          ...(input.user.system ? [input.user.system] : []),
-        ]
-          .filter((x) => x)
-          .join("\n"),
-      )
-
-      const header = system[0]
-      yield* plugin.trigger(
-        "experimental.chat.system.transform",
-        { sessionID: input.sessionID, model: input.model },
-        { system },
-      )
-      // rejoin to maintain 2-part structure for caching if header unchanged
-      if (system.length > 2 && system[0] === header) {
-        const rest = system.slice(1)
-        system.length = 0
-        system.push(header, rest.join("\n"))
-      }
+      const isWorkflow = language instanceof GitLabWorkflowLanguageModel
+      const prepared = yield* LLMRequestPrep.prepare({
+        ...input,
+        provider: item,
+        auth: info,
+        plugin,
+        flags,
+        isWorkflow,
+      })
 
       SystemPromptLog.set(input.sessionID, {
-        parts: system.map((content, i) => ({
+        parts: prepared.system.map((content, i) => ({
           label: i === 0 ? "Base prompt" : i === 1 ? "Context & instructions" : `Part ${i + 1}`,
           content,
         })),
@@ -134,81 +126,7 @@ const live: Layer.Layer<
         timestamp: Date.now(),
       })
 
-      const variant =
-        !input.small && input.model.variants && input.user.model.variant
-          ? input.model.variants[input.user.model.variant]
-          : {}
-      const base = input.small
-        ? ProviderTransform.smallOptions(input.model)
-        : ProviderTransform.options({
-            model: input.model,
-            sessionID: input.sessionID,
-            providerOptions: item.options,
-          })
-      const thinkingEffortOptions = input.thinkingEffort
-        ? ProviderTransform.thinkingEffortOptions(input.model, input.thinkingEffort)
-        : {}
-      const options: Record<string, any> = pipe(
-        base,
-        mergeDeep(input.model.options),
-        mergeDeep(input.agent.options),
-        mergeDeep(variant),
-        mergeDeep(thinkingEffortOptions),
-      )
-      if (isOpenaiOauth) {
-        options.instructions = system.join("\n")
-      }
-
-      const isWorkflow = language instanceof GitLabWorkflowLanguageModel
-      const messages = isOpenaiOauth
-        ? input.messages
-        : isWorkflow
-          ? input.messages
-          : [
-              ...system.map(
-                (x): ModelMessage => ({
-                  role: "system",
-                  content: x,
-                }),
-              ),
-              ...input.messages,
-            ]
-
-      const params = yield* plugin.trigger(
-        "chat.params",
-        {
-          sessionID: input.sessionID,
-          agent: input.agent.name,
-          model: input.model,
-          provider: item,
-          message: input.user,
-        },
-        {
-          temperature: input.model.capabilities.temperature
-            ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
-            : undefined,
-          topP: input.agent.topP ?? ProviderTransform.topP(input.model),
-          topK: ProviderTransform.topK(input.model),
-          maxOutputTokens: ProviderTransform.maxOutputTokens(input.model),
-          options,
-        },
-      )
-
-      const { headers } = yield* plugin.trigger(
-        "chat.headers",
-        {
-          sessionID: input.sessionID,
-          agent: input.agent.name,
-          model: input.model,
-          provider: item,
-          message: input.user,
-        },
-        {
-          headers: {},
-        },
-      )
-
-      const tools = resolveTools(input)
+      const telemetryTracer = yield* Effect.serviceOption(OtelTracer.Tracer)
 
       // Tool Calling Fallback Check
       // Only applies when model.capabilities.toolcall === false
@@ -228,36 +146,20 @@ const live: Layer.Layer<
 
         const fallbackService = new ToolCallFallbackService(
           input.model,
-          tools,
+          prepared.tools,
           { strategy: "auto", maxIterations: 5 }
         )
 
         // Create wrapper for streamText that matches fallback interface
         const streamTextWrapper = async (msgs: ModelMessage[], toolParams?: any) => {
           return streamText({
-            temperature: params.temperature,
-            topP: params.topP,
-            topK: params.topK,
-            providerOptions: ProviderTransform.providerOptions(input.model, params.options),
-            maxOutputTokens: params.maxOutputTokens,
+            temperature: prepared.params.temperature,
+            topP: prepared.params.topP,
+            topK: prepared.params.topK,
+            providerOptions: ProviderTransform.providerOptions(input.model, prepared.params.options),
+            maxOutputTokens: prepared.params.maxOutputTokens,
             abortSignal: input.abort,
-            headers: {
-              ...(input.model.providerID.startsWith("opencode")
-                ? {
-                    "x-opencode-project": Instance.project.id,
-                    "x-opencode-session": input.sessionID,
-                    "x-opencode-request": input.user.id,
-                    "x-opencode-client": Flag.OPENCODE_CLIENT,
-                    "User-Agent": `opencode/${InstallationVersion}`,
-                  }
-                : {
-                    "x-session-affinity": input.sessionID,
-                    ...(input.parentSessionID ? { "x-parent-session-id": input.parentSessionID } : {}),
-                    "User-Agent": `opencode/${InstallationVersion}`,
-                  }),
-              ...input.model.headers,
-              ...headers,
-            },
+            headers: prepared.headers,
             maxRetries: input.retries ?? 0,
             messages: msgs,
             model: wrapLanguageModel({
@@ -267,15 +169,27 @@ const live: Layer.Layer<
                   specificationVersion: "v3" as const,
                   async transformParams(args) {
                     if (args.type === "stream") {
-                      // @ts-expect-error - ProviderTransform.message signature is compatible at runtime
-                      // but the AI SDK v3 middleware types don't match the 2nd argument type
-                      args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
+                      // @ts-expect-error
+                      args.params.prompt = ProviderTransform.message(
+                        args.params.prompt,
+                        input.model,
+                        prepared.messageTransformOptions,
+                      )
                     }
                     return args.params
                   },
                 },
               ],
             }),
+            experimental_telemetry: {
+              isEnabled: cfg.experimental?.openTelemetry,
+              functionId: "session.llm",
+              tracer: telemetryTracer,
+              metadata: {
+                userId: cfg.username ?? "unknown",
+                sessionId: input.sessionID,
+              },
+            },
           })
         }
 
@@ -284,7 +198,7 @@ const live: Layer.Layer<
           try: async () => {
             const events: any[] = []
             const stream = fallbackService.executeWithFallback(
-              [...messages],
+              [...prepared.messages],
               {
                 stream: async (msgs: ModelMessage[], toolParams?: Record<string, unknown>) => {
                   const result = await streamTextWrapper(msgs, toolParams)
@@ -352,79 +266,50 @@ const live: Layer.Layer<
             result: e.result,
           }))
 
-            // Build fullStream from fallback events
-            const fullStream = (async function* () {
-              for (const event of fallbackStream.fallbackEvents) {
-                if (event.type === "text-delta") {
-                  yield { type: "text-delta" as const, textDelta: event.textDelta }
-                } else if (event.type === "tool-call") {
-                  yield {
-                    type: "tool-call" as const,
-                    toolCallId: event.toolCallId,
-                    toolName: event.toolName,
-                    args: event.args,
-                  }
-                } else if (event.type === "tool-result") {
-                  yield {
-                    type: "tool-result" as const,
-                    toolCallId: event.toolCallId,
-                    result: event.result,
-                  }
-                } else if (event.type === "error") {
-                  yield { type: "error" as const, error: event.error }
-                }
+        // Build fullStream from fallback events
+        const fullStream = (async function* () {
+          for (const event of fallbackStream.fallbackEvents) {
+            if (event.type === "text-delta") {
+              yield { type: "text-delta" as const, textDelta: event.textDelta }
+            } else if (event.type === "tool-call") {
+              yield {
+                type: "tool-call" as const,
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                args: event.args,
               }
-            })()
+            } else if (event.type === "tool-result") {
+              yield {
+                type: "tool-result" as const,
+                toolCallId: event.toolCallId,
+                result: event.result,
+              }
+            } else if (event.type === "error") {
+              yield { type: "error" as const, error: event.error }
+            }
+          }
+        })()
 
         return {
-          text: Promise.resolve(textParts),
-          toolCalls: Promise.resolve(toolCalls),
-          toolResults: Promise.resolve(toolResults),
-          finishReason: Promise.resolve("stop" as const),
-          usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
-          warnings: Promise.resolve([]),
-          request: Promise.resolve({}),
-          response: Promise.resolve({
-            id: "fallback",
-            modelId: input.model.id,
-            timestamp: new Date(),
-          }),
-          fullStream,
-          experimentalOutput: Promise.resolve(undefined),
-          experimentalMessages: Promise.resolve({ messages: [] }),
-        } as unknown as Result
-      }
-
-      // LiteLLM and some Anthropic proxies require the tools parameter to be present
-      // when message history contains tool calls, even if no tools are being used.
-      // Add a dummy tool that is never called to satisfy this validation.
-      // This is enabled for:
-      // 1. Providers with "litellm" in their ID or API ID (auto-detected)
-      // 2. Providers with explicit "litellmProxy: true" option (opt-in for custom gateways)
-      const isLiteLLMProxy =
-        item.options?.["litellmProxy"] === true ||
-        input.model.providerID.toLowerCase().includes("litellm") ||
-        input.model.api.id.toLowerCase().includes("litellm")
-
-      // LiteLLM/Bedrock rejects requests where the message history contains tool
-      // calls but no tools param is present. When there are no active tools (e.g.
-      // during compaction), inject a stub tool to satisfy the validation requirement.
-      // The stub description explicitly tells the model not to call it.
-      if (
-        (isLiteLLMProxy || input.model.providerID.includes("github-copilot")) &&
-        Object.keys(tools).length === 0 &&
-        hasToolCalls(input.messages)
-      ) {
-        tools["_noop"] = tool({
-          description: "Do not call this tool. It exists only for API compatibility and must never be invoked.",
-          inputSchema: jsonSchema({
-            type: "object",
-            properties: {
-              reason: { type: "string", description: "Unused" },
-            },
-          }),
-          execute: async () => ({ output: "", title: "", metadata: {} }),
-        })
+          type: "ai-sdk" as const,
+          result: {
+            text: Promise.resolve(textParts),
+            toolCalls: Promise.resolve(toolCalls),
+            toolResults: Promise.resolve(toolResults),
+            finishReason: Promise.resolve("stop" as const),
+            usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
+            warnings: Promise.resolve([]),
+            request: Promise.resolve({}),
+            response: Promise.resolve({
+              id: "fallback",
+              modelId: input.model.id,
+              timestamp: new Date(),
+            }),
+            fullStream,
+            experimentalOutput: Promise.resolve(undefined),
+            experimentalMessages: Promise.resolve({ messages: [] }),
+          } as any
+        }
       }
 
       // Wire up toolExecutor for DWS workflow models so that tool calls
@@ -437,9 +322,9 @@ const live: Layer.Layer<
           approvalHandler?: (approvalTools: { name: string; args: string }[]) => Promise<{ approved: boolean }>
         }
         workflowModel.sessionID = input.sessionID
-        workflowModel.systemPrompt = system.join("\n")
+        workflowModel.systemPrompt = prepared.system.join("\n")
         workflowModel.toolExecutor = async (toolName, argsJson, _requestID) => {
-          const t = tools[toolName]
+          const t = prepared.tools[toolName]
           if (!t || !t.execute) {
             return { result: "", error: `Unknown tool: ${toolName}` }
           }
@@ -461,14 +346,14 @@ const live: Layer.Layer<
         }
 
         const ruleset = Permission.merge(input.agent.permission ?? [], input.permission ?? [])
-        workflowModel.sessionPreapprovedTools = Object.keys(tools).filter((name) => {
+        workflowModel.sessionPreapprovedTools = Object.keys(prepared.tools).filter((name) => {
           const match = ruleset.findLast((rule) => Wildcard.match(name, rule.permission))
           return !match || match.action !== "ask"
         })
 
         const bridge = yield* EffectBridge.make()
         const approvedToolsForSession = new Set<string>()
-        workflowModel.approvalHandler = Instance.bind(async (approvalTools) => {
+        workflowModel.approvalHandler = bridge.bind(async (approvalTools) => {
           const uniqueNames = [...new Set(approvalTools.map((t: { name: string }) => t.name))] as string[]
           // Auto-approve tools that were already approved in this session
           // (prevents infinite approval loops for server-side MCP tools)
@@ -516,79 +401,129 @@ const live: Layer.Layer<
 
       // Telemetry removed in this fork
 
-      return streamText({
-        onError(error) {
-          l.error("stream error", {
-            error,
-          })
-        },
-        async experimental_repairToolCall(failed) {
-          const lower = failed.toolCall.toolName.toLowerCase()
-          if (lower !== failed.toolCall.toolName && tools[lower]) {
-            l.info("repairing tool call", {
-              tool: failed.toolCall.toolName,
-              repaired: lower,
+      // Runtime seam: native is an opt-in adapter over @opencode-ai/llm. It
+      // either returns a ready LLMEvent stream or a concrete fallback reason.
+      if (flags.experimentalNativeLlm) {
+        const native = LLMNativeRuntime.stream({
+          model: input.model,
+          provider: item,
+          auth: info,
+          llmClient,
+          messages: prepared.messages,
+          tools: prepared.tools,
+          toolChoice: input.toolChoice,
+          temperature: prepared.params.temperature,
+          topP: prepared.params.topP,
+          topK: prepared.params.topK,
+          maxOutputTokens: prepared.params.maxOutputTokens,
+          providerOptions: prepared.params.options,
+          headers: prepared.headers,
+          abort: input.abort,
+        })
+        if (native.type === "supported") {
+          yield* Effect.logInfo("llm runtime selected").pipe(
+            Effect.annotateLogs({
+              "llm.runtime": "native",
+              "llm.provider": input.model.providerID,
+              "llm.model": input.model.id,
+            }),
+          )
+          return {
+            type: "native" as const,
+            stream: native.stream,
+          }
+        }
+        yield* Effect.logInfo("llm runtime selected").pipe(
+          Effect.annotateLogs({
+            "llm.runtime": "ai-sdk",
+            "llm.provider": input.model.providerID,
+            "llm.model": input.model.id,
+            "llm.native_unsupported_reason": native.reason,
+          }),
+        )
+        l.info("native runtime unavailable; falling back to ai-sdk", { reason: native.reason })
+      }
+
+      yield* Effect.logInfo("llm runtime selected").pipe(
+        Effect.annotateLogs({
+          "llm.runtime": "ai-sdk",
+          "llm.provider": input.model.providerID,
+          "llm.model": input.model.id,
+        }),
+      )
+      // Default runtime path: AI SDK owns provider execution and tool dispatch;
+      // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
+      return {
+        type: "ai-sdk" as const,
+        result: streamText({
+          onError(error) {
+            l.error("stream error", {
+              error,
             })
+          },
+          async experimental_repairToolCall(failed) {
+            const lower = failed.toolCall.toolName.toLowerCase()
+            if (lower !== failed.toolCall.toolName && prepared.tools[lower]) {
+              l.info("repairing tool call", {
+                tool: failed.toolCall.toolName,
+                repaired: lower,
+              })
+              return {
+                ...failed.toolCall,
+                toolName: lower,
+              }
+            }
             return {
               ...failed.toolCall,
-              toolName: lower,
-            }
-          }
-          return {
-            ...failed.toolCall,
-            input: JSON.stringify({
-              tool: failed.toolCall.toolName,
-              error: failed.error.message,
-            }),
-            toolName: "invalid",
-          }
-        },
-        temperature: params.temperature,
-        topP: params.topP,
-        topK: params.topK,
-        providerOptions: ProviderTransform.providerOptions(input.model, params.options),
-        activeTools: Object.keys(tools).filter((x) => x !== "invalid"),
-        tools,
-        toolChoice: input.toolChoice,
-        maxOutputTokens: params.maxOutputTokens,
-        abortSignal: input.abort,
-        headers: {
-          ...(input.model.providerID.startsWith("opencode")
-            ? {
-                "x-opencode-project": Instance.project.id,
-                "x-opencode-session": input.sessionID,
-                "x-opencode-request": input.user.id,
-                "x-opencode-client": Flag.OPENCODE_CLIENT,
-                "User-Agent": `opencode/${InstallationVersion}`,
-              }
-            : {
-                "x-session-affinity": input.sessionID,
-                ...(input.parentSessionID ? { "x-parent-session-id": input.parentSessionID } : {}),
-                "User-Agent": `opencode/${InstallationVersion}`,
+              input: JSON.stringify({
+                tool: failed.toolCall.toolName,
+                error: failed.error.message,
               }),
-          ...input.model.headers,
-          ...headers,
-        },
-        maxRetries: input.retries ?? 0,
-        messages,
-        model: wrapLanguageModel({
-          model: language,
-          middleware: [
-            {
-              specificationVersion: "v3" as const,
-              async transformParams(args) {
-                if (args.type === "stream") {
-                  // @ts-expect-error - ProviderTransform.message signature is compatible at runtime
-                  // but the AI SDK v3 middleware types don't match the 2nd argument type
-                  args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
-                }
-                return args.params
+              toolName: "invalid",
+            }
+          },
+          temperature: prepared.params.temperature,
+          topP: prepared.params.topP,
+          topK: prepared.params.topK,
+          providerOptions: ProviderTransform.providerOptions(input.model, prepared.params.options),
+          activeTools: Object.keys(prepared.tools).filter((x) => x !== "invalid"),
+          tools: prepared.tools,
+          toolChoice: input.toolChoice,
+          maxOutputTokens: prepared.params.maxOutputTokens,
+          abortSignal: input.abort,
+          headers: prepared.headers,
+          maxRetries: input.retries ?? 0,
+          messages: prepared.messages,
+          model: wrapLanguageModel({
+            model: language,
+            middleware: [
+              {
+                specificationVersion: "v3" as const,
+                async transformParams(args) {
+                  if (args.type === "stream") {
+                    // @ts-expect-error
+                    args.params.prompt = ProviderTransform.message(
+                      args.params.prompt,
+                      input.model,
+                      prepared.messageTransformOptions,
+                    )
+                  }
+                  return args.params
+                },
               },
+            ],
+          }),
+          experimental_telemetry: {
+            isEnabled: cfg.experimental?.openTelemetry,
+            functionId: "session.llm",
+            tracer: telemetryTracer,
+            metadata: {
+              userId: cfg.username ?? "unknown",
+              sessionId: input.sessionID,
             },
-          ],
+          },
         }),
-        // experimental_telemetry removed in this fork
-      })
+      }
     })
 
     const stream: Interface["stream"] = (input) =>
@@ -602,7 +537,17 @@ const live: Layer.Layer<
 
             const result = yield* run({ ...input, abort: ctrl.signal })
 
-            return Stream.fromAsyncIterable(result.fullStream, (e) => (e instanceof Error ? e : new Error(String(e))))
+            if (result.type === "native") return result.stream
+
+            // Adapter seam: both runtimes expose the same LLMEvent stream. Native
+            // already returns one; AI SDK streams are converted here.
+            const state = LLMAISDK.adapterState()
+            return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
+              e instanceof Error ? e : new Error(String(e)),
+            ).pipe(
+              Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
+              Stream.flatMap((events) => Stream.fromIterable(events)),
+            )
           }),
         ),
       )
@@ -619,27 +564,13 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Config.defaultLayer),
     Layer.provide(Provider.defaultLayer),
     Layer.provide(Plugin.defaultLayer),
+    Layer.provide(
+      LLMClient.layer.pipe(Layer.provide(Layer.mergeAll(RequestExecutor.defaultLayer, WebSocketExecutor.layer))),
+    ),
+    Layer.provide(RuntimeFlags.defaultLayer),
   ),
 )
 
-function resolveTools(input: Pick<StreamInput, "tools" | "agent" | "permission" | "user">) {
-  const disabled = Permission.disabled(
-    Object.keys(input.tools),
-    Permission.merge(input.agent.permission, input.permission ?? []),
-  )
-  return Record.filter(input.tools, (_, k) => input.user.tools?.[k] !== false && !disabled.has(k))
-}
-
-// Check if messages contain any tool-call content
-// Used to determine if a dummy tool should be added for LiteLLM proxy compatibility
-export function hasToolCalls(messages: ModelMessage[]): boolean {
-  for (const msg of messages) {
-    if (!Array.isArray(msg.content)) continue
-    for (const part of msg.content) {
-      if (part.type === "tool-call" || part.type === "tool-result") return true
-    }
-  }
-  return false
-}
+export const hasToolCalls = LLMRequestPrep.hasToolCalls
 
 export * as LLM from "./llm"

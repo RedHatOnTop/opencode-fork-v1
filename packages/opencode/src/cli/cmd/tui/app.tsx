@@ -1,7 +1,9 @@
-import { render, TimeToFirstDraw, useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import * as Clipboard from "@tui/util/clipboard"
 import * as Selection from "@tui/util/selection"
-import { createCliRenderer, MouseButton, type CliRendererConfig } from "@opentui/core"
+import * as TuiAudio from "@tui/util/audio"
+import { createCliRenderer, MouseButton, type CliRenderer, type CliRendererConfig } from "@opentui/core"
 import { RouteProvider, useRoute } from "@tui/context/route"
 import {
   Switch,
@@ -11,23 +13,25 @@ import {
   ErrorBoundary,
   createSignal,
   onMount,
+  onCleanup,
   batch,
   Show,
   on,
 } from "solid-js"
-import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
+import { win32DisableProcessedInput, win32FlushInputBuffer, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
 import { DialogProviderSettings, DialogProviderList } from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
-import { ProjectProvider } from "@tui/context/project"
+import { ProjectProvider, useProject } from "@tui/context/project"
 import { EditorContextProvider } from "@tui/context/editor"
 import { useEvent } from "@tui/context/event"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
 import { StartupLoading } from "@tui/component/startup-loading"
 import { SyncProvider, useSync } from "@tui/context/sync"
+import { SyncProviderV2 } from "@tui/context/sync-v2"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel } from "@tui/component/dialog-model"
 import { useConnected } from "@tui/component/use-connected"
@@ -36,11 +40,10 @@ import { DialogStatus } from "@tui/component/dialog-status"
 import { DialogSystemPrompt } from "@tui/component/dialog-system-prompt"
 import { DialogThemeList } from "@tui/component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
-import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
 import { DialogAgent } from "@tui/component/dialog-agent"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
+import { DialogWorkspaceList } from "@tui/component/dialog-workspace-list"
 import { DialogConsoleOrg } from "@tui/component/dialog-console-org"
-import { KeybindProvider, useKeybind } from "@tui/context/keybind"
 import { ThemeProvider, useTheme } from "@tui/context/theme"
 import { Home } from "@tui/routes/home"
 import { Session } from "@tui/routes/session"
@@ -50,7 +53,7 @@ import { PromptStashProvider } from "./component/prompt/stash"
 import { DialogAlert } from "./ui/dialog-alert"
 import { DialogConfirm } from "./ui/dialog-confirm"
 import { ToastProvider, useToast } from "./ui/toast"
-import { ExitProvider, useExit } from "./context/exit"
+import { createExit, ExitProvider, useExit, type Exit } from "./context/exit"
 import { Session as SessionApi } from "@/session/session"
 import { TuiEvent } from "./event"
 import { KVProvider, useKV } from "./context/kv"
@@ -60,16 +63,74 @@ import open from "open"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider, useTuiConfig } from "./context/tui-config"
 import { TuiConfig } from "@/cli/cmd/tui/config/tui"
-import { createTuiApi } from "@/cli/cmd/tui/plugin/api"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
+import { createTuiApi } from "@/cli/cmd/tui/plugin/api"
 import type { RouteMap } from "@/cli/cmd/tui/plugin/api"
+import { createTuiAttention } from "@/cli/cmd/tui/attention"
 import { FormatError, FormatUnknownError } from "@/cli/error"
+import { CommandPaletteDialog } from "./component/command-palette"
+import {
+  COMMAND_PALETTE_COMMAND,
+  OPENCODE_BASE_MODE,
+  OpencodeKeymapProvider,
+  registerOpencodeKeymap,
+  useBindings,
+  useOpencodeKeymap,
+} from "./keymap"
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
 import { DialogThinkingEffort } from "./component/dialog-thinking-effort"
 
-function rendererConfig(_config: TuiConfig.Info): CliRendererConfig {
+const appGlobalBindingCommands = [
+  "session.list",
+  "session.new",
+  "session.quick_switch.1",
+  "session.quick_switch.2",
+  "session.quick_switch.3",
+  "session.quick_switch.4",
+  "session.quick_switch.5",
+  "session.quick_switch.6",
+  "session.quick_switch.7",
+  "session.quick_switch.8",
+  "session.quick_switch.9",
+] as const
+
+const appBindingCommands = [
+  "command.palette.show",
+  "model.list",
+  "model.cycle_recent",
+  "model.cycle_recent_reverse",
+  "model.cycle_favorite",
+  "model.cycle_favorite_reverse",
+  "agent.list",
+  "mcp.list",
+  "agent.cycle",
+  "agent.cycle.reverse",
+  "variant.cycle",
+  "variant.list",
+  "provider.connect",
+  "console.org.switch",
+  "opencode.status",
+  "theme.switch",
+  "theme.switch_mode",
+  "theme.mode.lock",
+  "help.show",
+  "docs.open",
+  "workspace.list",
+  "app.debug",
+  "app.console",
+  "app.heap_snapshot",
+  "terminal.suspend",
+  "terminal.title.toggle",
+  "app.toggle.animations",
+  "app.toggle.file_context",
+  "app.toggle.diffwrap",
+  "app.toggle.paste_summary",
+  "app.toggle.session_directory_filter",
+] as const
+
+export function tuiRendererConfig(_config: TuiConfig.Resolved): CliRendererConfig {
   const mouseEnabled = !Flag.OPENCODE_DISABLE_MOUSE && (_config.mouse ?? true)
 
   return {
@@ -92,6 +153,34 @@ function rendererConfig(_config: TuiConfig.Info): CliRendererConfig {
   }
 }
 
+export function createTuiRenderer(config: TuiConfig.Resolved) {
+  return createCliRenderer(tuiRendererConfig(config))
+}
+
+export type TuiHandle = {
+  ready: Promise<void>
+  done: Promise<void>
+  exit: Exit
+}
+
+type TuiInput = {
+  url: string
+  args: Args
+  config: TuiConfig.Resolved
+  renderer: CliRenderer
+  onSnapshot?: () => Promise<string[]>
+  directory?: string
+  fetch?: typeof fetch
+  headers?: RequestInit["headers"]
+  events?: EventSource
+}
+
+type TuiLifecycle = {
+  exit: Exit
+  exited: Promise<void>
+  fail(error: unknown): Promise<never>
+}
+
 function errorMessage(error: unknown) {
   const formatted = FormatError(error)
   if (formatted !== undefined) return formatted
@@ -109,43 +198,43 @@ function errorMessage(error: unknown) {
   return FormatUnknownError(error)
 }
 
-export function tui(input: {
-  url: string
-  args: Args
-  config: TuiConfig.Info
-  onSnapshot?: () => Promise<string[]>
-  directory?: string
-  fetch?: typeof fetch
-  headers?: RequestInit["headers"]
-  events?: EventSource
-}) {
-  // promise to prevent immediate exit
-  // oxlint-disable-next-line no-async-promise-executor -- intentional: async executor used for sequential setup before resolve
-  return new Promise<void>(async (resolve) => {
-    const unguard = win32InstallCtrlCGuard()
-    win32DisableProcessedInput()
+export function tui(input: TuiInput): TuiHandle {
+  const unguard = win32InstallCtrlCGuard()
+  win32DisableProcessedInput()
 
-    const onExit = async () => {
-      unguard?.()
-      resolve()
-    }
-
-    const onBeforeExit = async () => {
+  const renderer = input.renderer
+  const keymap = createDefaultOpenTuiKeymap(renderer)
+  const unregisterKeymap = registerOpencodeKeymap(keymap, renderer, input.config)
+  const lifecycle = createTuiLifecycle({
+    renderer,
+    unguard,
+    cleanup: async () => {
+      unregisterKeymap()
       await TuiPluginRuntime.dispose()
-    }
+      TuiAudio.dispose()
+    },
+  })
+  const ready = mountTui({ ...input, keymap, exit: lifecycle.exit }).catch((error) => lifecycle.fail(error))
+  const done = waitUntilDone(ready, lifecycle.exited)
 
-    const renderer = await createCliRenderer(rendererConfig(input.config))
-    const mode = (await renderer.waitForThemeMode(1000)) ?? "dark"
+  return { ready, done, exit: lifecycle.exit }
+}
 
-    await render(() => {
-      return (
-        <ErrorBoundary
-          fallback={(error, reset) => (
-            <ErrorComponent error={error} reset={reset} onBeforeExit={onBeforeExit} onExit={onExit} mode={mode} />
-          )}
-        >
+async function mountTui(input: TuiInput & { keymap: ReturnType<typeof createDefaultOpenTuiKeymap>; exit: Exit }) {
+  const renderer = input.renderer
+  // Prewarm palette before ThemeProvider mounts so `system` theme avoids a first-paint fallback flash.
+  void renderer.getPalette({ size: 16 }).catch(() => undefined)
+  const mode = (await renderer.waitForThemeMode(1000)) ?? "dark"
+  if (renderer.isDestroyed) return
+
+  await render(() => {
+    return (
+      <ErrorBoundary
+        fallback={(error, reset) => <ErrorComponent error={error} reset={reset} exit={input.exit} mode={mode} />}
+      >
+        <OpencodeKeymapProvider keymap={input.keymap}>
           <ArgsProvider {...input.args}>
-            <ExitProvider onBeforeExit={onBeforeExit} onExit={onExit}>
+            <ExitProvider exit={input.exit}>
               <KVProvider>
                 <ToastProvider>
                   <RouteProvider
@@ -168,27 +257,25 @@ export function tui(input: {
                       >
                         <ProjectProvider>
                           <SyncProvider>
-                            <ThemeProvider mode={mode}>
-                              <LocalProvider>
-                                <KeybindProvider>
+                            <SyncProviderV2>
+                              <ThemeProvider mode={mode}>
+                                <LocalProvider>
                                   <PromptStashProvider>
                                     <DialogProvider>
-                                      <CommandProvider>
-                                        <FrecencyProvider>
-                                          <PromptHistoryProvider>
-                                            <PromptRefProvider>
-                                              <EditorContextProvider>
-                                                <App onSnapshot={input.onSnapshot} />
-                                              </EditorContextProvider>
-                                            </PromptRefProvider>
-                                          </PromptHistoryProvider>
-                                        </FrecencyProvider>
-                                      </CommandProvider>
+                                      <FrecencyProvider>
+                                        <PromptHistoryProvider>
+                                          <PromptRefProvider>
+                                            <EditorContextProvider>
+                                              <App onSnapshot={input.onSnapshot} />
+                                            </EditorContextProvider>
+                                          </PromptRefProvider>
+                                        </PromptHistoryProvider>
+                                      </FrecencyProvider>
                                     </DialogProvider>
                                   </PromptStashProvider>
-                                </KeybindProvider>
-                              </LocalProvider>
-                            </ThemeProvider>
+                                </LocalProvider>
+                              </ThemeProvider>
+                            </SyncProviderV2>
                           </SyncProvider>
                         </ProjectProvider>
                       </SDKProvider>
@@ -198,10 +285,88 @@ export function tui(input: {
               </KVProvider>
             </ExitProvider>
           </ArgsProvider>
-        </ErrorBoundary>
-      )
-    }, renderer)
+        </OpencodeKeymapProvider>
+      </ErrorBoundary>
+    )
+  }, renderer)
+}
+
+function createTuiLifecycle(input: {
+  renderer: CliRenderer
+  unguard?: () => void
+  cleanup: () => Promise<void>
+}): TuiLifecycle {
+  let resolveExited!: () => void
+  const exited = new Promise<void>((resolve) => {
+    resolveExited = resolve
   })
+  let exitCompleted = false
+  let exiting = false
+  let cleanupTask: Promise<void> | undefined
+
+  const completeExit = () => {
+    if (exitCompleted) return
+    exitCompleted = true
+    resolveExited()
+  }
+
+  const cleanup = () => {
+    cleanupTask ??= (async () => {
+      process.off("SIGHUP", onSighup)
+      try {
+        await input.cleanup()
+      } finally {
+        input.unguard?.()
+      }
+    })()
+    return cleanupTask
+  }
+
+  const exit = createExit(async (reason, message) => {
+    exiting = true
+    await cleanup()
+    if (!input.renderer.isDestroyed) {
+      input.renderer.setTerminalTitle("")
+      input.renderer.destroy()
+    }
+    win32FlushInputBuffer()
+    if (reason) {
+      const formatted = FormatError(reason) ?? FormatUnknownError(reason)
+      if (formatted) process.stderr.write(formatted + "\n")
+    }
+    const text = message()
+    if (text) process.stdout.write(text + "\n")
+    completeExit()
+  })
+  const onSighup = () => {
+    void exit()
+  }
+
+  input.renderer.once("destroy", () => {
+    if (exiting) return
+    void cleanup().finally(() => {
+      win32FlushInputBuffer()
+      completeExit()
+    })
+  })
+  process.on("SIGHUP", onSighup)
+
+  return {
+    exit,
+    exited,
+    async fail(error) {
+      exiting = true
+      await cleanup().catch(() => {})
+      if (!input.renderer.isDestroyed) input.renderer.destroy()
+      completeExit()
+      throw error
+    },
+  }
+}
+
+async function waitUntilDone(ready: Promise<void>, exited: Promise<void>) {
+  await ready
+  await exited
 }
 
 function App(props: { onSnapshot?: () => Promise<string[]> }) {
@@ -212,14 +377,14 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const dialog = useDialog()
   const local = useLocal()
   const kv = useKV()
-  const command = useCommandDialog()
-  const keybind = useKeybind()
+  const keymap = useOpencodeKeymap()
   const event = useEvent()
   const sdk = useSDK()
   const toast = useToast()
   const themeState = useTheme()
   const { theme, mode, setMode, locked, lock, unlock } = themeState
   const sync = useSync()
+  const project = useProject()
   const exit = useExit()
   const promptRef = usePromptRef()
   const routes: RouteMap = new Map()
@@ -228,12 +393,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     routeRev()
     return routes.get(name)?.at(-1)?.render
   }
+  const attention = createTuiAttention({ renderer, config: tuiConfig, kv })
 
   const api = createTuiApi({
-    command,
     tuiConfig,
     dialog,
-    keybind,
+    keymap,
     kv,
     route,
     routes,
@@ -244,11 +409,13 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     theme: themeState,
     toast,
     renderer,
+    attention,
   })
   const [ready, setReady] = createSignal(false)
   TuiPluginRuntime.init({
     api,
     config: tuiConfig,
+    dispose: () => attention.dispose(),
   })
     .catch((error) => {
       console.error("Failed to load TUI plugins", error)
@@ -257,39 +424,18 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       setReady(true)
     })
 
-  useKeyboard((evt) => {
-    if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
-    const sel = renderer.getSelection()
-    if (!sel) return
-
-    // Windows Terminal-like behavior:
-    // - Ctrl+C copies and dismisses selection
-    // - Esc dismisses selection
-    // - Most other key input dismisses selection and is passed through
-    if (evt.ctrl && evt.name === "c") {
-      if (!Selection.copy(renderer, toast)) {
-        renderer.clearSelection()
-        return
-      }
-
-      evt.preventDefault()
-      evt.stopPropagation()
-      return
-    }
-
-    if (evt.name === "escape") {
-      renderer.clearSelection()
-      evt.preventDefault()
-      evt.stopPropagation()
-      return
-    }
-
-    const focus = renderer.currentFocusedRenderable
-    if (focus?.hasSelection() && sel.selectedRenderables.includes(focus)) {
-      return
-    }
-
-    renderer.clearSelection()
+  // Let selection copy/dismiss win ahead of normal bindings when the feature flag is on.
+  const offSelectionKeys = keymap.intercept(
+    "key",
+    ({ event }) => {
+      if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
+      Selection.handleSelectionKey(renderer, toast, event)
+    },
+    { priority: 1 },
+  )
+  onCleanup(() => {
+    offSelectionKeys()
+    attention.dispose()
   })
 
   // Wire up console copy-to-clipboard via opentui's onCopySelection callback
@@ -303,6 +449,9 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     renderer.clearSelection()
   }
   const [terminalTitleEnabled, setTerminalTitleEnabled] = createSignal(kv.get("terminal_title_enabled", true))
+  const [pasteSummaryEnabled, setPasteSummaryEnabled] = createSignal(
+    kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary),
+  )
 
   // Update terminal window title based on current route and session
   createEffect(() => {
@@ -404,445 +553,518 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   )
 
   const connected = useConnected()
-  command.register(() => [
-    {
-      title: "Switch session",
-      value: "session.list",
-      keybind: "session_list",
-      category: "Session",
-      suggested: sync.data.session.length > 0,
-      slash: {
-        name: "sessions",
-        aliases: ["resume", "continue"],
+  const currentWorktreeWorkspace = createMemo(() => {
+    const workspaceID = project.workspace.current()
+    if (!workspaceID) return
+    const workspace = project.workspace.get(workspaceID)
+    if (workspace?.type !== "worktree" || !workspace.directory) return
+    return workspace
+  })
+  const appCommands = createMemo(() =>
+    [
+      {
+        name: COMMAND_PALETTE_COMMAND,
+        title: "Show command palette",
+        category: "System",
+        hidden: true,
+        run: () => {
+          dialog.replace(() => <CommandPaletteDialog />)
+        },
       },
-      onSelect: () => {
-        dialog.replace(() => <DialogSessionList />)
+      {
+        name: "session.list",
+        title: "Switch session",
+        category: "Session",
+        suggested: sync.data.session.length > 0,
+        slashName: "sessions",
+        slashAliases: ["resume", "continue"],
+        run: () => {
+          dialog.replace(() => <DialogSessionList />)
+        },
       },
-    },
-    {
-      title: "New session",
-      suggested: route.data.type === "session",
-      value: "session.new",
-      keybind: "session_new",
-      category: "Session",
-      slash: {
-        name: "new",
-        aliases: ["clear"],
-      },
-      onSelect: () => {
-        route.navigate({
-          type: "home",
-        })
-        dialog.clear()
-      },
-    },
-    {
-      title: "Switch model",
-      value: "model.list",
-      keybind: "model_list",
-      suggested: true,
-      category: "Agent",
-      slash: {
-        name: "models",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogModel />)
-      },
-    },
-    {
-      title: "Model cycle",
-      value: "model.cycle_recent",
-      keybind: "model_cycle_recent",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        local.model.cycle(1)
-      },
-    },
-    {
-      title: "Model cycle reverse",
-      value: "model.cycle_recent_reverse",
-      keybind: "model_cycle_recent_reverse",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        local.model.cycle(-1)
-      },
-    },
-    {
-      title: "Favorite cycle",
-      value: "model.cycle_favorite",
-      keybind: "model_cycle_favorite",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        local.model.cycleFavorite(1)
-      },
-    },
-    {
-      title: "Favorite cycle reverse",
-      value: "model.cycle_favorite_reverse",
-      keybind: "model_cycle_favorite_reverse",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        local.model.cycleFavorite(-1)
-      },
-    },
-    {
-      title: "Switch agent",
-      value: "agent.list",
-      keybind: "agent_list",
-      category: "Agent",
-      slash: {
-        name: "agents",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogAgent />)
-      },
-    },
-    {
-      title: "Toggle MCPs",
-      value: "mcp.list",
-      category: "Agent",
-      slash: {
-        name: "mcps",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogMcp />)
-      },
-    },
-    {
-      title: "Toggle vibe/spec mode",
-      value: "agent.cycle",
-      keybind: "agent_cycle",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        void local.workflow.toggle()
-      },
-    },
-    {
-      title: "Variant cycle",
-      value: "variant.cycle",
-      keybind: "variant_cycle",
-      category: "Agent",
-      onSelect: () => {
-        local.model.variant.cycle()
-      },
-    },
-    {
-      title: "Switch model variant",
-      value: "variant.list",
-      keybind: "variant_list",
-      category: "Agent",
-      hidden: local.model.variant.list().length === 0,
-      slash: {
-        name: "variants",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogVariant />)
-      },
-    },
-    {
-      title: "Cycle thinking effort",
-      value: "thinking_effort.cycle",
-      keybind: "thinking_effort_cycle",
-      category: "Agent",
-      onSelect: () => {
-        local.model.thinkingEffort.cycle()
-      },
-    },
-    {
-      title: "Switch thinking effort",
-      value: "thinking_effort.list",
-      keybind: "thinking_effort_list",
-      category: "Agent",
-      hidden: local.model.thinkingEffort.list().length === 0,
-      slash: {
-        name: "thinking-effort",
-        aliases: ["thinking", "effort"],
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogThinkingEffort />)
-      },
-    },
-    {
-      title: "Toggle spec/vibe mode",
-      value: "agent.cycle.reverse",
-      keybind: "agent_cycle_reverse",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        void local.workflow.toggle()
-      },
-    },
-    {
-      title: "Manage providers",
-      value: "provider.settings",
-      suggested: !connected(),
-      slash: {
-        name: "provider",
-        aliases: ["connect"],
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogProviderSettings />)
-      },
-      category: "Provider",
-    },
-    ...(sync.data.console_state.switchableOrgCount > 1
-      ? [
-          {
-            title: "Switch org",
-            value: "console.org.switch",
-            suggested: Boolean(sync.data.console_state.activeOrgName),
-            slash: {
-              name: "org",
-              aliases: ["orgs", "switch-org"],
-            },
-            onSelect: () => {
-              dialog.replace(() => <DialogConsoleOrg />)
-            },
-            category: "Provider",
-          },
-        ]
-      : []),
-    {
-      title: "View status",
-      keybind: "status_view",
-      value: "opencode.status",
-      slash: {
-        name: "status",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogStatus />)
-      },
-      category: "System",
-    },
-    {
-      title: "View system prompt",
-      value: "opencode.system_prompt",
-      keybind: "system_prompt",
-      slash: {
-        name: "system-prompt",
-        aliases: ["prompt"],
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogSystemPrompt />)
-      },
-      category: "System",
-    },
-    {
-      title: "Switch theme",
-      value: "theme.switch",
-      keybind: "theme_list",
-      slash: {
-        name: "themes",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogThemeList />)
-      },
-      category: "System",
-    },
-    {
-      title: mode() === "dark" ? "Switch to light mode" : "Switch to dark mode",
-      value: "theme.switch_mode",
-      onSelect: (dialog) => {
-        setMode(mode() === "dark" ? "light" : "dark")
-        dialog.clear()
-      },
-      category: "System",
-    },
-    {
-      title: locked() ? "Unlock theme mode" : "Lock theme mode",
-      value: "theme.mode.lock",
-      onSelect: (dialog) => {
-        if (locked()) unlock()
-        else lock()
-        dialog.clear()
-      },
-      category: "System",
-    },
-    {
-      title: "Help",
-      value: "help.show",
-      slash: {
-        name: "help",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogHelp />)
-      },
-      category: "System",
-    },
-    {
-      title: "Open docs",
-      value: "docs.open",
-      hidden: true,
-      onSelect: () => {
-        open("https://opencode.ai/docs").catch(() => {})
-        dialog.clear()
-      },
-      category: "System",
-    },
-    {
-      title: "Exit the app",
-      value: "app.exit",
-      slash: {
-        name: "exit",
-        aliases: ["quit", "q"],
-      },
-      onSelect: () => exit(),
-      category: "System",
-    },
-    {
-      title: "Toggle debug panel",
-      category: "System",
-      value: "app.debug",
-      onSelect: (dialog) => {
-        renderer.toggleDebugOverlay()
-        dialog.clear()
-      },
-    },
-    {
-      title: "Toggle console",
-      category: "System",
-      value: "app.console",
-      onSelect: (dialog) => {
-        renderer.console.toggle()
-        dialog.clear()
-      },
-    },
-    {
-      title: "Write heap snapshot",
-      category: "System",
-      value: "app.heap_snapshot",
-      onSelect: async (dialog) => {
-        const files = await props.onSnapshot?.()
-        toast.show({
-          variant: "info",
-          message: `Heap snapshot written to ${files?.join(", ")}`,
-          duration: 5000,
-        })
-        dialog.clear()
-      },
-    },
-    {
-      title: "Suspend terminal",
-      value: "terminal.suspend",
-      keybind: "terminal_suspend",
-      category: "System",
-      hidden: true,
-      enabled: process.platform !== "win32" && tuiConfig.keybinds?.terminal_suspend !== "none",
-      onSelect: () => {
-        process.once("SIGCONT", () => {
-          renderer.resume()
-        })
-
-        renderer.suspend()
-        process.kill(0, "SIGTSTP")
-      },
-    },
-    {
-      title: terminalTitleEnabled() ? "Disable terminal title" : "Enable terminal title",
-      value: "terminal.title.toggle",
-      keybind: "terminal_title_toggle",
-      category: "System",
-      onSelect: (dialog) => {
-        setTerminalTitleEnabled((prev) => {
-          const next = !prev
-          kv.set("terminal_title_enabled", next)
-          if (!next) renderer.setTerminalTitle("")
-          return next
-        })
-        dialog.clear()
-      },
-    },
-    {
-      title: kv.get("animations_enabled", true) ? "Disable animations" : "Enable animations",
-      value: "app.toggle.animations",
-      category: "System",
-      onSelect: (dialog) => {
-        kv.set("animations_enabled", !kv.get("animations_enabled", true))
-        dialog.clear()
-      },
-    },
-    {
-      title: kv.get("file_context_enabled", true) ? "Disable file context" : "Enable file context",
-      value: "app.toggle.file_context",
-      category: "System",
-      onSelect: (dialog) => {
-        kv.set("file_context_enabled", !kv.get("file_context_enabled", true))
-        dialog.clear()
-      },
-    },
-    {
-      title: kv.get("diff_wrap_mode", "word") === "word" ? "Disable diff wrapping" : "Enable diff wrapping",
-      value: "app.toggle.diffwrap",
-      category: "System",
-      onSelect: (dialog) => {
-        const current = kv.get("diff_wrap_mode", "word")
-        kv.set("diff_wrap_mode", current === "word" ? "none" : "word")
-        dialog.clear()
-      },
-    },
-    {
-      title: kv.get("graphify_enabled", false) ? "Disable Graphify" : "Enable Graphify",
-      value: "app.toggle.graphify",
-      category: "Feature",
-      onSelect: async (dialog) => {
-        const next = !kv.get("graphify_enabled", false)
-        kv.set("graphify_enabled", next)
-        try {
-          await sdk.client.config.update({ config: { graphify: { enabled: next } } })
-        } catch {}
-        toast.show({
-          variant: next ? "success" : "info",
-          title: next ? "Graphify Enabled" : "Graphify Disabled",
-          message: next
-            ? "Knowledge graph integration is active. Run `graphify .` to build a graph."
-            : "Knowledge graph integration is off.",
-          duration: 3000,
-        })
-        dialog.clear()
-      },
-    },
-    {
-      title: "Change working directory",
-      value: "app.cd",
-      category: "System",
-      slash: {
-        name: "cd",
-      },
-      onSelect: async (dialog) => {
-        const { DialogPrompt } = await import("@tui/ui/dialog-prompt")
-        const { Filesystem } = await import("@/util/filesystem")
-        const result = await DialogPrompt.show(dialog, "Change working directory", {
-          value: process.cwd(),
-          placeholder: "Enter directory path",
-        })
-        if (!result) return
-        const target = Filesystem.resolve(result)
-        if (!(await Filesystem.exists(target))) {
-          toast.show({ variant: "error", message: `Directory not found: ${target}`, duration: 3000 })
+      {
+        name: "session.new",
+        title: "New session",
+        suggested: route.data.type === "session",
+        category: "Session",
+        slashName: "new",
+        slashAliases: ["clear"],
+        run: () => {
+          route.navigate({
+            type: "home",
+          })
           dialog.clear()
-          return
-        }
-        try {
-          process.chdir(target)
-          sdk.updateDirectory(target)
-          await sdk.client.instance.dispose().catch(() => {})
-          await sync.bootstrap()
-          toast.show({ variant: "success", message: `Working directory: ${target}`, duration: 2000 })
-        } catch (e) {
-          toast.show({ variant: "error", message: `Failed: ${e instanceof Error ? e.message : String(e)}`, duration: 3000 })
-        }
-        dialog.clear()
+        },
       },
+      {
+        name: "workspace.copy_path",
+        title: "Copy worktree path",
+        category: "Workspace",
+        enabled: () => currentWorktreeWorkspace() !== undefined,
+        run: async () => {
+          const workspace = currentWorktreeWorkspace()
+          if (!workspace?.directory) return
+          await Clipboard.copy(workspace.directory)
+            .then(() => toast.show({ message: "Copied worktree path", variant: "info" }))
+            .catch(toast.error)
+          dialog.clear()
+        },
+      },
+      {
+        name: "workspace.list",
+        title: "Manage workspaces",
+        category: "Workspace",
+        hidden: !Flag.OPENCODE_EXPERIMENTAL_WORKSPACES,
+        slashName: "workspaces",
+        run: () => {
+          dialog.replace(() => <DialogWorkspaceList />)
+        },
+      },
+      ...Array.from({ length: 9 }, (_, i) => ({
+        name: `session.quick_switch.${i + 1}`,
+        title: `Switch to session in quick slot ${i + 1}`,
+        category: "Session",
+        hidden: true,
+        run: () => {
+          local.session.quickSwitch(i + 1)
+        },
+      })),
+      {
+        name: "model.list",
+        title: "Switch model",
+        suggested: true,
+        category: "Agent",
+        slashName: "models",
+        run: () => {
+          dialog.replace(() => <DialogModel />)
+        },
+      },
+      {
+        name: "model.cycle_recent",
+        title: "Model cycle",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          local.model.cycle(1)
+        },
+      },
+      {
+        name: "model.cycle_recent_reverse",
+        title: "Model cycle reverse",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          local.model.cycle(-1)
+        },
+      },
+      {
+        name: "model.cycle_favorite",
+        title: "Favorite cycle",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          local.model.cycleFavorite(1)
+        },
+      },
+      {
+        name: "model.cycle_favorite_reverse",
+        title: "Favorite cycle reverse",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          local.model.cycleFavorite(-1)
+        },
+      },
+      {
+        name: "agent.list",
+        title: "Switch agent",
+        category: "Agent",
+        slashName: "agents",
+        run: () => {
+          dialog.replace(() => <DialogAgent />)
+        },
+      },
+      {
+        name: "mcp.list",
+        title: "Toggle MCPs",
+        category: "Agent",
+        slashName: "mcps",
+        run: () => {
+          dialog.replace(() => <DialogMcp />)
+        },
+      },
+      {
+        name: "agent.cycle",
+        title: "Agent cycle",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          local.agent.move(1)
+        },
+      },
+      {
+        name: "variant.cycle",
+        title: "Variant cycle",
+        category: "Agent",
+        run: () => {
+          local.model.variant.cycle()
+        },
+      },
+      {
+        name: "variant.list",
+        title: "Switch model variant",
+        category: "Agent",
+        hidden: local.model.variant.list().length === 0,
+        slashName: "variants",
+        run: () => {
+          dialog.replace(() => <DialogVariant />)
+        },
+      },
+      {
+        name: "agent.cycle.reverse",
+        title: "Agent cycle reverse",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          local.agent.move(-1)
+        },
+      },
+      {
+        name: "provider.connect",
+        title: "Connect provider",
+        suggested: !connected(),
+        slashName: "connect",
+        run: () => {
+          dialog.replace(() => <DialogProviderList />)
+        },
+        category: "Provider",
+      },
+      {
+        name: "thinking_effort.cycle",
+        title: "Cycle thinking effort",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          local.model.thinkingEffort.cycle()
+        },
+      },
+      {
+        name: "thinking_effort.list",
+        title: "Switch thinking effort",
+        category: "Agent",
+        hidden: local.model.thinkingEffort.list().length === 0,
+        slashName: "thinking-effort",
+        slashAliases: ["thinking", "effort"],
+        run: () => {
+          dialog.replace(() => <DialogThinkingEffort />)
+        },
+      },
+      {
+        name: "agent.workflow.toggle",
+        title: "Toggle spec/vibe mode",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          void local.workflow.toggle()
+        },
+      },
+      {
+        name: "provider.settings",
+        title: "Manage providers",
+        suggested: !connected(),
+        slashName: "provider",
+        slashAliases: ["connect"],
+        run: () => {
+          dialog.replace(() => <DialogProviderSettings />)
+        },
+        category: "Provider",
+      },
+      ...(sync.data.console_state.switchableOrgCount > 1
+        ? [
+            {
+              name: "console.org.switch",
+              title: "Switch org",
+              suggested: Boolean(sync.data.console_state.activeOrgName),
+              slashName: "org",
+              slashAliases: ["orgs", "switch-org"],
+              run: () => {
+                dialog.replace(() => <DialogConsoleOrg />)
+              },
+              category: "Provider",
+>>>>>>> upstream/dev
+            },
+          ]
+        : []),
+      {
+        name: "opencode.status",
+        title: "View status",
+        slashName: "status",
+        run: () => {
+          dialog.replace(() => <DialogStatus />)
+        },
+        category: "System",
+      },
+      {
+        name: "theme.switch",
+        title: "Switch theme",
+        slashName: "themes",
+        run: () => {
+          dialog.replace(() => <DialogThemeList />)
+        },
+        category: "System",
+      },
+      {
+        name: "opencode.system_prompt",
+        title: "View system prompt",
+        category: "System",
+        slashName: "system-prompt",
+        slashAliases: ["prompt"],
+        run: () => {
+          dialog.replace(() => <DialogSystemPrompt />)
+        },
+      },
+      {
+        name: "theme.switch_mode",
+        title: mode() === "dark" ? "Switch to light mode" : "Switch to dark mode",
+        run: () => {
+          setMode(mode() === "dark" ? "light" : "dark")
+          dialog.clear()
+        },
+        category: "System",
+      },
+      {
+        name: "theme.mode.lock",
+        title: locked() ? "Unlock theme mode" : "Lock theme mode",
+        run: () => {
+          if (locked()) unlock()
+          else lock()
+          dialog.clear()
+        },
+        category: "System",
+      },
+      {
+        name: "help.show",
+        title: "Help",
+        slashName: "help",
+        run: () => {
+          dialog.replace(() => <DialogHelp />)
+        },
+        category: "System",
+      },
+      {
+        name: "docs.open",
+        title: "Open docs",
+        run: () => {
+          open("https://opencode.ai/docs").catch(() => {})
+          dialog.clear()
+        },
+        category: "System",
+      },
+      {
+        name: "app.exit",
+        title: "Exit the app",
+        slashName: "exit",
+        slashAliases: ["quit", "q"],
+        run: () => exit(),
+        category: "System",
+      },
+      {
+        name: "app.debug",
+        title: "Toggle debug panel",
+        category: "System",
+        run: () => {
+          renderer.toggleDebugOverlay()
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.console",
+        title: "Toggle console",
+        category: "System",
+        run: () => {
+          renderer.console.toggle()
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.heap_snapshot",
+        title: "Write heap snapshot",
+        category: "System",
+        run: async () => {
+          const files = await props.onSnapshot?.()
+          toast.show({
+            variant: "info",
+            message: `Heap snapshot written to ${files?.join(", ")}`,
+            duration: 5000,
+          })
+          dialog.clear()
+        },
+      },
+      {
+        name: "terminal.suspend",
+        title: "Suspend terminal",
+        category: "System",
+        hidden: true,
+        enabled: process.platform !== "win32" && tuiConfig.keybinds?.terminal_suspend !== "none",
+        run: () => {
+          process.once("SIGCONT", () => {
+            renderer.resume()
+          })
+
+          renderer.suspend()
+          process.kill(0, "SIGTSTP")
+        },
+      },
+      {
+        name: "terminal.title.toggle",
+        title: terminalTitleEnabled() ? "Disable terminal title" : "Enable terminal title",
+        category: "System",
+        run: () => {
+          setTerminalTitleEnabled((prev) => {
+            const next = !prev
+            kv.set("terminal_title_enabled", next)
+            if (!next) renderer.setTerminalTitle("")
+            return next
+          })
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.toggle.animations",
+        title: kv.get("animations_enabled", true) ? "Disable animations" : "Enable animations",
+        category: "System",
+        run: () => {
+          kv.set("animations_enabled", !kv.get("animations_enabled", true))
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.toggle.file_context",
+        title: kv.get("file_context_enabled", true) ? "Disable file context" : "Enable file context",
+        category: "System",
+        run: () => {
+          kv.set("file_context_enabled", !kv.get("file_context_enabled", true))
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.toggle.diffwrap",
+        title: kv.get("diff_wrap_mode", "word") === "word" ? "Disable diff wrapping" : "Enable diff wrapping",
+        category: "System",
+        run: () => {
+          const current = kv.get("diff_wrap_mode", "word")
+          kv.set("diff_wrap_mode", current === "word" ? "none" : "word")
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.toggle.paste_summary",
+        title: pasteSummaryEnabled() ? "Disable paste summary" : "Enable paste summary",
+        category: "System",
+        run: () => {
+          setPasteSummaryEnabled((prev) => {
+            const next = !prev
+            kv.set("paste_summary_enabled", next)
+            return next
+          })
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.toggle.session_directory_filter",
+        title: kv.get("session_directory_filter_enabled", true)
+          ? "Disable session directory filtering"
+          : "Enable session directory filtering",
+        category: "System",
+        run: async () => {
+          kv.set("session_directory_filter_enabled", !kv.get("session_directory_filter_enabled", true))
+          await sync.session.refresh()
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.toggle.graphify",
+        title: kv.get("graphify_enabled", false) ? "Disable Graphify" : "Enable Graphify",
+        category: "Feature",
+        run: async () => {
+          const next = !kv.get("graphify_enabled", false)
+          kv.set("graphify_enabled", next)
+          try {
+            await sdk.client.config.update({ config: { graphify: { enabled: next } } })
+          } catch {}
+          toast.show({
+            variant: next ? "success" : "info",
+            title: next ? "Graphify Enabled" : "Graphify Disabled",
+            message: next
+              ? "Knowledge graph integration is active. Run `graphify .` to build a graph."
+              : "Knowledge graph integration is off.",
+            duration: 3000,
+          })
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.cd",
+        title: "Change working directory",
+        category: "System",
+        slashName: "cd",
+        run: async () => {
+          const { DialogPrompt } = await import("@tui/ui/dialog-prompt")
+          const { Filesystem } = await import("@/util/filesystem")
+          const result = await DialogPrompt.show(dialog, "Change working directory", {
+            value: process.cwd(),
+            placeholder: "Enter directory path",
+          })
+          if (!result) return
+          const target = Filesystem.resolve(result)
+          if (!(await Filesystem.exists(target))) {
+            toast.show({ variant: "error", message: `Directory not found: ${target}`, duration: 3000 })
+            dialog.clear()
+            return
+          }
+          try {
+            process.chdir(target)
+            sdk.updateDirectory(target)
+            await sdk.client.instance.dispose().catch(() => {})
+            await sync.bootstrap()
+            toast.show({ variant: "success", message: `Working directory: ${target}`, duration: 2000 })
+          } catch (e) {
+            toast.show({ variant: "error", message: `Failed: ${e instanceof Error ? e.message : String(e)}`, duration: 3000 })
+          }
+          dialog.clear()
+        },
+      },
+    ].map((command) => ({
+      namespace: "palette",
+      ...command,
+    })),
+  )
+
+  useBindings(() => ({
+    commands: appCommands(),
+  }))
+
+  useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
+    bindings: tuiConfig.keybinds.gather("app", appBindingCommands),
+  }))
+
+  useBindings(() => ({
+    bindings: tuiConfig.keybinds.gather("app.global", appGlobalBindingCommands),
+  }))
+
+  useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
+    enabled: () => {
+      const current = promptRef.current
+      if (!current?.focused) return true
+      return current.current.input === ""
     },
-  ])
+    bindings: tuiConfig.keybinds.gather("app_exit", ["app.exit"]),
+  }))
 
   event.on(TuiEvent.CommandExecute.type, (evt) => {
-    command.trigger(evt.properties.command)
+    keymap.dispatchCommand(evt.properties.command)
   })
 
   event.on(TuiEvent.ToastShow.type, (evt) => {
@@ -884,6 +1106,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   })
 
   event.on("installation.update-available", async (evt) => {
+    console.log("installation.update-available", evt)
     const version = evt.properties.version
 
     const skipped = kv.get("skipped_version")
@@ -940,8 +1163,9 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
 
   return (
     <box
-      width={Math.max(1, dimensions().width)}
-      height={Math.max(1, dimensions().height)}
+      width={dimensions().width}
+      height={dimensions().height}
+      flexDirection="column"
       backgroundColor={theme.background}
       onMouseDown={(evt) => {
         if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
@@ -957,17 +1181,22 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         <TimeToFirstDraw />
       </Show>
       <Show when={ready()}>
-        <Switch>
-          <Match when={route.data.type === "home"}>
-            <Home />
-          </Match>
-          <Match when={route.data.type === "session"}>
-            <Session />
-          </Match>
-        </Switch>
+        <box flexGrow={1} minHeight={0} flexDirection="column">
+          <Switch>
+            <Match when={route.data.type === "home"}>
+              <Home />
+            </Match>
+            <Match when={route.data.type === "session"}>
+              <Session />
+            </Match>
+          </Switch>
+          {plugin()}
+        </box>
+        <box flexShrink={0}>
+          <TuiPluginRuntime.Slot name="app_bottom" />
+        </box>
+        <TuiPluginRuntime.Slot name="app" />
       </Show>
-      {plugin()}
-      <TuiPluginRuntime.Slot name="app" />
       <StartupLoading ready={ready} />
     </box>
   )

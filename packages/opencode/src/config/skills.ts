@@ -1,6 +1,4 @@
 import { Schema } from "effect"
-import { zod } from "@/util/effect-zod"
-import { withStatics } from "@/util/schema"
 
 export const Info = Schema.Struct({
   paths: Schema.optional(Schema.Array(Schema.String)).annotate({
@@ -18,7 +16,7 @@ export const Info = Schema.Struct({
   search_limit: Schema.optional(Schema.Number).annotate({
     description: "Default number of search results (default: 10)",
   }),
-}).pipe(withStatics((s) => ({ zod: zod(s) })))
+})
 
 export type Info = Schema.Schema.Type<typeof Info>
 

@@ -1,3 +1,4 @@
+
 import { Wildcard } from "@/util/wildcard"
 import type { ApprovalMode, ToolCategory } from "./approval-mode"
 import { MODE_POLICIES } from "./approval-mode"
@@ -65,3 +66,4 @@ export function evaluateWithMode(
 
   return rule
 }
+

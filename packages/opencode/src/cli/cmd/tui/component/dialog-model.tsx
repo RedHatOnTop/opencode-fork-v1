@@ -9,7 +9,6 @@ import { DialogVariant } from "./dialog-variant"
 import { DialogModelVisibility } from "./dialog-model-visibility"
 import { DialogDisconnectProvider } from "./dialog-disconnect-provider"
 import { DialogEditCustomProviderSelect } from "./dialog-add-custom-provider"
-import { useKeybind } from "../context/keybind"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
 
@@ -17,7 +16,6 @@ export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
-  const keybind = useKeybind()
   const [query, setQuery] = createSignal("")
 
   const connected = useConnected()
@@ -182,16 +180,16 @@ export function DialogModel(props: { providerID?: string }) {
   return (
     <DialogSelect<ReturnType<typeof options>[number]["value"]>
       options={options()}
-      keybind={[
+      actions={[
         {
-          keybind: keybind.all.model_provider_list?.[0],
+          command: "model.dialog.provider",
           title: connected() ? "Connect provider" : "View all providers",
           onTrigger() {
             dialog.replace(() => <DialogProviderList />)
           },
         },
         {
-          keybind: keybind.all.model_favorite_toggle?.[0],
+          command: "model.dialog.favorite",
           title: "Favorite",
           disabled: !connected(),
           onTrigger: (option) => {

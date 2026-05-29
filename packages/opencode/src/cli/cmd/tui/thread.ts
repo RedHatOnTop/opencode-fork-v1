@@ -1,5 +1,4 @@
 import { cmd } from "@/cli/cmd/cmd"
-import { tui } from "./app"
 import { Rpc } from "@/util/rpc"
 import { type rpc } from "./worker"
 import path from "path"
@@ -78,6 +77,12 @@ async function input(value?: string) {
   return piped + "\n" + value
 }
 
+export function resolveThreadDirectory(project?: string, envPWD = process.env.PWD, cwd = process.cwd()) {
+  const root = Filesystem.resolve(envPWD ?? cwd)
+  if (project) return Filesystem.resolve(path.isAbsolute(project) ? project : path.join(root, project))
+  return Filesystem.resolve(cwd)
+}
+
 export const TuiThreadCommand = cmd({
   command: "$0 [project]",
   describe: "start opencode tui",
@@ -131,18 +136,8 @@ export const TuiThreadCommand = cmd({
 
       // Resolve relative --project paths from PWD, then use the real cwd after
       // chdir so the thread and worker share the same directory key.
-      // When launched via `bun run dev` from a package script, process.cwd()
-      // is the package directory, not the caller's cwd. Try to recover the
-      // original directory from environment variables or parent process.
-      const root = Filesystem.resolve(
-        process.env.OPENCODE_DEV_CWD ??
-          process.env.INIT_CWD ??
-          process.env.PWD ??
-          process.cwd(),
-      )
-      const next = args.project
-        ? Filesystem.resolve(path.isAbsolute(args.project) ? args.project : path.join(root, args.project))
-        : root
+      const envRoot = process.env.OPENCODE_DEV_CWD ?? process.env.INIT_CWD ?? process.env.PWD
+      const next = resolveThreadDirectory(args.project, envRoot)
       const file = await target()
       try {
         process.chdir(next)
@@ -246,8 +241,11 @@ export const TuiThreadCommand = cmd({
       }, 1000).unref?.()
 
       try {
-        await tui({
+        const { createTuiRenderer, tui } = await import("./app")
+        const renderer = await createTuiRenderer(config)
+        const handle = tui({
           url: transport.url,
+          renderer,
           async onSnapshot() {
             const tui = writeHeapSnapshot("tui.heapsnapshot")
             const server = await client.call("snapshot", undefined)
@@ -266,6 +264,7 @@ export const TuiThreadCommand = cmd({
             fork: args.fork,
           },
         })
+        await handle.done
       } finally {
         await stop()
       }
