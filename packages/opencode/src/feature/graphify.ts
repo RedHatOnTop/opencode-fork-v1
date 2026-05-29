@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Config } from "@/config/config"
-import { Instance } from "@/project/instance"
+import { InstanceState } from "@/effect/instance-state"
 import path from "path"
 import fs from "fs"
 import PROMPT_GRAPHIFY from "../session/prompt/graphify.txt"
@@ -27,18 +27,20 @@ export const make = Effect.gen(function* () {
 
   const graphReportPath = Effect.fn("GraphifyFeature.graphReportPath")(function* () {
     const config = yield* configSvc.get()
+    const ctx = yield* InstanceState.context
     const basePath = config.graphify?.graph_path
       ? path.dirname(config.graphify.graph_path)
       : "graphify-out"
-    return path.join(Instance.directory, basePath, "GRAPH_REPORT.md")
+    return path.join(ctx.directory, basePath, "GRAPH_REPORT.md")
   })
 
   const graphJsonPath = Effect.fn("GraphifyFeature.graphJsonPath")(function* () {
     const config = yield* configSvc.get()
+    const ctx = yield* InstanceState.context
     const basePath = config.graphify?.graph_path
       ? config.graphify.graph_path
       : "graphify-out/graph.json"
-    return path.join(Instance.directory, basePath)
+    return path.join(ctx.directory, basePath)
   })
 
   const graphExists = Effect.fn("GraphifyFeature.graphExists")(function* () {

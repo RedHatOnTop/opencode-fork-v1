@@ -13,7 +13,6 @@ import { Context, Effect, Layer, Schema } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { Config } from "@/config/config"
 import { Git } from "@/git"
-import { Instance } from "@/project/instance"
 import { InstanceState } from "@/effect/instance-state"
 
 const log = Log.create({ service: "mention" })

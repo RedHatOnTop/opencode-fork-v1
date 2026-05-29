@@ -14,7 +14,7 @@
 import { Schema, Context, Effect, Layer, Option } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { ulid } from "ulid"
-import { Instance } from "../project/instance"
+import { InstanceState } from "@/effect/instance-state"
 import { Service as PersistenceService, defaultLayer as persistenceLayer } from "./persistence"
 
 const log = Log.create({ service: "memory" })
@@ -163,19 +163,24 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const persistence = yield* PersistenceService
-    const getProjectRoot = () => Instance.directory
+    const getProjectRoot = () => Effect.gen(function* () {
+      const ctx = yield* InstanceState.context
+      return ctx.directory
+    })
     const state: State = { entries: new Map() }
     let loaded = false
 
     const persistScope = Effect.fn("Memory.persistScope")(function* (scope: MemoryScope) {
       const entries = Array.from(state.entries.values()).filter((e) => e.scope === scope)
       if (entries.length > 0) {
-        yield* persistence.persist(entries, scope, getProjectRoot(), state.activeSessionId)
+        const root = yield* getProjectRoot()
+        yield* persistence.persist(entries, scope, root, state.activeSessionId)
       }
     })
 
     const loadScope = Effect.fn("Memory.loadScope")(function* (scope: MemoryScope) {
-      const items = yield* persistence.load(scope, getProjectRoot(), state.activeSessionId)
+      const root = yield* getProjectRoot()
+      const items = yield* persistence.load(scope, root, state.activeSessionId)
       for (const entry of items) {
         state.entries.set(entry.id, entry)
       }
