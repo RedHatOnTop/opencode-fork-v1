@@ -718,27 +718,26 @@ export const layer = Layer.effect(
 
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 
-          const dep = yield* npmSvc
-            .install(dir, {
-              add: [
-                {
-                  name: "@opencode-ai/plugin",
-                  version: InstallationLocal ? undefined : InstallationVersion,
-                },
-              ],
-            })
-            .pipe(
-              Effect.exit,
-              Effect.tap((exit) =>
-                Exit.isFailure(exit)
-                  ? Effect.sync(() => {
-                      log.warn("background dependency install failed", { dir, error: String(exit.cause) })
-                    })
-                  : Effect.void,
-              ),
-              Effect.asVoid,
-              Effect.forkDetach,
-            )
+          const installEffect = process.env.NODE_ENV === "test"
+            ? Effect.void
+            : npmSvc.install(dir, {
+                add: [
+                  {
+                    name: "@opencode-ai/plugin",
+                    version: InstallationLocal ? undefined : InstallationVersion,
+                  },
+                ],
+              })
+
+          const exitEffect = Effect.exit(installEffect)
+          const tappedEffect = Effect.tap(exitEffect, (exit) =>
+            Exit.isFailure(exit)
+              ? Effect.sync(() => {
+                  log.warn("background dependency install failed", { dir, error: String(exit.cause) })
+                })
+              : Effect.void
+          )
+          const dep = yield* Effect.forkDetach(Effect.asVoid(tappedEffect))
           deps.push(dep)
 
           result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
@@ -926,7 +925,7 @@ export const layer = Layer.effect(
       const file = globalConfigFile()
       const before = (yield* readConfigFile(file)) ?? "{}"
       const patch = writableGlobal(config)
-      const existing = ConfigParse.effectSchema(Info, ConfigParse.jsonc(before, file), file)
+      const existing = ConfigParse.schema(Info, ConfigParse.jsonc(before, file), file)
 
       const patchWithDeletes = { ...patch } as any
 

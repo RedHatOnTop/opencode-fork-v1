@@ -15,6 +15,7 @@ import path from "path"
 import { which } from "../../util/which"
 import { AppRuntime } from "@/effect/app-runtime"
 import * as Log from "@opencode-ai/core/util/log"
+import { bootstrap } from "../bootstrap"
 
 const log = Log.create({ service: "session-cmd" })
 
@@ -84,7 +85,7 @@ export const SessionResumeCommand = cmd({
 
       // If --list flag, show recent sessions for selection
       if (args.list && !sessionID) {
-        const sessions = [...Session.list({ roots: true, limit: 10 })]
+        const sessions = await AppRuntime.runPromise(Session.Service.use((svc) => svc.list({ roots: true, limit: 10 })))
         if (sessions.length === 0) {
           UI.println(UI.Style.TEXT_DIM + "No sessions found." + UI.Style.TEXT_NORMAL)
           return
@@ -103,7 +104,7 @@ export const SessionResumeCommand = cmd({
 
       // If no sessionID provided, find the most recent session
       if (!sessionID) {
-        const sessions = [...Session.list({ roots: true, limit: 1 })]
+        const sessions = await AppRuntime.runPromise(Session.Service.use((svc) => svc.list({ roots: true, limit: 1 })))
         if (sessions.length === 0) {
           UI.error("No sessions found to resume.")
           process.exit(1)

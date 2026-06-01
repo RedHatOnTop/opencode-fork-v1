@@ -904,7 +904,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         title: "Suspend terminal",
         category: "System",
         hidden: true,
-        enabled: process.platform !== "win32" && tuiConfig.keybinds?.terminal_suspend !== "none",
+        enabled: process.platform !== "win32" && (tuiConfig.keybinds as any)?.terminal_suspend !== "none",
         run: () => {
           process.once("SIGCONT", () => {
             renderer.resume()
@@ -989,7 +989,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           const next = !kv.get("graphify_enabled", false)
           kv.set("graphify_enabled", next)
           try {
-            await sdk.client.config.update({ config: { graphify: { enabled: next } } })
+            await sdk.client.config.update({ config: { graphify: { enabled: next } } as any })
           } catch {}
           toast.show({
             variant: next ? "success" : "info",

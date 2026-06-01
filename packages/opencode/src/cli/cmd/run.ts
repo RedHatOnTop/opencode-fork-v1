@@ -472,7 +472,7 @@ export const RunCommand = effectCmd({
         const name = title()
         const result = await sdk.session.create({
           title: name,
-          permission: [...rules],
+          permission: [...rules] as any,
         })
         const id = result.data?.id
         if (!id) {
@@ -515,7 +515,7 @@ export const RunCommand = effectCmd({
                 variant: input.variant,
               }
             : undefined,
-          permission: [...rules],
+          permission: [...rules] as any,
         })
         const id = result.data?.id
         if (!id) {

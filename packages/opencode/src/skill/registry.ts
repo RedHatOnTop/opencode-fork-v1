@@ -90,7 +90,8 @@ async function loadData(): Promise<{
     }
   }
 
-  const dataDir = new URL("./data/", import.meta.url).pathname
+  const { fileURLToPath } = await import("url")
+  const dataDir = fileURLToPath(new URL("./data/", import.meta.url))
 
   try {
     const [registryStr, indexStr, treeStr, alwaysStr, profilesStr] = await Promise.all([

@@ -4,6 +4,7 @@ import { CliError, effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as Prompt from "../effect/prompt"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
+import * as prompts from "@clack/prompts"
 
 import { map, pipe, sortBy, values } from "remeda"
 import path from "path"
@@ -16,6 +17,7 @@ import { Process } from "@/util/process"
 import { errorMessage } from "@/util/error"
 import { text } from "node:stream/consumers"
 import { Effect, Option } from "effect"
+import { AppRuntime } from "@/effect/app-runtime"
 
 type PluginAuth = NonNullable<Hooks["auth"]>
 
@@ -134,7 +136,7 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
     if (authorize.method === "code") {
       const code = yield* Prompt.text({
         message: "Paste the authorization code here: ",
-        validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+        validate: (x: any) => (x && x.length > 0 ? undefined : "Required"),
       })
       const authorizationCode = yield* promptValue(code)
       const result = yield* cliTry("Failed to authorize: ", () => authorize.callback(authorizationCode))
@@ -171,7 +173,7 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
   if (method.type === "api") {
     const key = yield* Prompt.password({
       message: "Enter your API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+      validate: (x: any) => (x && x.length > 0 ? undefined : "Required"),
     })
     const apiKey = yield* promptValue(key)
 
@@ -259,7 +261,7 @@ export const ProvidersAddCustomCommand = cmd({
     const url = await prompts.text({
       message: "Enter the provider endpoint URL (e.g. http://localhost:11434/v1)",
       placeholder: "https://api.openai.com/v1",
-      validate: (x) => {
+      validate: (x: any) => {
         if (!x || x.trim().length === 0) return "Required"
         try {
           new URL(x)
@@ -273,14 +275,14 @@ export const ProvidersAddCustomCommand = cmd({
 
     const key = await prompts.password({
       message: "Enter the API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+      validate: (x: any) => (x && x.length > 0 ? undefined : "Required"),
     })
     if (prompts.isCancel(key)) throw new UI.CancelledError()
 
     const providerNameRaw = await prompts.text({
       message: "Enter a name for this custom provider (e.g. custom-local)",
       placeholder: "my-custom-provider",
-      validate: (x) => (x && x.match(/^[a-z0-9-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
+      validate: (x: any) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
     })
     if (prompts.isCancel(providerNameRaw)) throw new UI.CancelledError()
     const providerName = providerNameRaw.toLowerCase()
@@ -564,7 +566,7 @@ export const ProvidersLoginCommand = effectCmd({
       provider = (yield* promptValue(
         yield* Prompt.text({
           message: "Enter provider id",
-          validate: (x) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
+          validate: (x: any) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
         }),
       )).replace(/^@ai-sdk\//, "")
 
@@ -605,7 +607,7 @@ export const ProvidersLoginCommand = effectCmd({
 
     const key = yield* Prompt.password({
       message: "Enter your API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+      validate: (x: any) => (x && x.length > 0 ? undefined : "Required"),
     })
     const apiKey = yield* promptValue(key)
     yield* Effect.orDie(authSvc.set(provider, { type: "api", key: apiKey }))
@@ -631,15 +633,16 @@ export const ProvidersLogoutCommand = effectCmd({
       return
     }
     const database = yield* modelsDev.get()
-    const selected = yield* Prompt.select({
-      message: "Select provider",
-      options: credentials.map(([key, value]) => ({
-        label: (database[key]?.name || key) + UI.Style.TEXT_DIM + " (" + value.type + ")",
-        value: key,
-      })),
-    })
-    if (prompts.isCancel(selected)) throw new UI.CancelledError()
-    const providerID = selected as string
+    const selected = yield* promptValue(
+      yield* Prompt.select({
+        message: "Select provider",
+        options: credentials.map(([key, value]) => ({
+          label: (database[key]?.name || key) + UI.Style.TEXT_DIM + " (" + value.type + ")",
+          value: key,
+        })),
+      })
+    )
+    const providerID = selected
     yield* Effect.orDie(authSvc.remove(providerID))
     yield* Prompt.outro("Logout successful")
   }),

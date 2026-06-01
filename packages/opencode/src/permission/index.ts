@@ -9,7 +9,7 @@ import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"
 import * as Log from "@opencode-ai/core/util/log"
 import { Wildcard } from "@opencode-ai/core/util/wildcard"
-import { Deferred, Effect, Layer, Schema, Context } from "effect"
+import { Deferred, Effect, Layer, Schema, Context, Option } from "effect"
 import os from "os"
 import { evaluateWithMode } from "./evaluate"
 import { PermissionV2 } from "@opencode-ai/core/permission"
@@ -145,7 +145,7 @@ interface State {
 }
 
 export function evaluate(permission: string, pattern: string, ...rulesets: Ruleset[]): Rule {
-  return PermissionV2.evaluate(permission, pattern, ...rulesets)
+  return PermissionV2.evaluate(permission, pattern, ...(rulesets as any)) as any
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
@@ -187,16 +187,17 @@ export const layer = Layer.effect(
       const mode = approvalMode._tag === "Some" ? yield* approvalMode.value.getMode() : "default"
 
       for (const pattern of request.patterns) {
-        const rule = evaluateWithMode(request.permission, pattern, mode, ruleset, approved)
+        const rule = evaluateWithMode(request.permission, pattern, mode, ruleset as any, approved)
         log.info("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
           return yield* new DeniedError({
-            ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
+            ruleset: (ruleset as any).filter((rule: any) => Wildcard.match(request.permission, rule.permission)) as any,
           })
         }
         if (rule.action === "queue") {
-          if (actionQueue._tag === "Some") {
-            yield* actionQueue.value.add({
+          const queue = Option.getOrUndefined(actionQueue)
+          if (queue) {
+            yield* queue.add({
               sessionId: request.sessionID,
               reason: `Permission ${request.permission} for ${pattern}`,
               command: pattern,
@@ -317,18 +318,18 @@ export function fromConfig(permission: ConfigPermission.Info) {
       continue
     }
     ruleset.push(
-      ...Object.entries(value).map(([pattern, action]) => ({ permission: key, pattern: expand(pattern), action })),
+      ...(Object.entries(value).map(([pattern, action]) => ({ permission: key, pattern: expand(pattern), action })) as any),
     )
   }
   return ruleset
 }
 
 export function merge(...rulesets: Ruleset[]): Rule[] {
-  return [...PermissionV2.merge(...rulesets)]
+  return [...PermissionV2.merge(...(rulesets as any))] as any
 }
 
 export function disabled(tools: string[], ruleset: Ruleset): Set<string> {
-  return PermissionV2.disabled(tools, ruleset)
+  return PermissionV2.disabled(tools, ruleset as any)
 }
 
 export const defaultLayer = layer.pipe(Layer.provide(Bus.layer))

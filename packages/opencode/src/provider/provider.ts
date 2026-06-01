@@ -1819,7 +1819,7 @@ export const layer = Layer.effect(
             }
           }
 
-          const unprefixed = candidates.find((m) => !crossRegionPrefixes.some((p) => m.startsWith(p)))
+          const unprefixed = candidates.find((m) => !CROSS_REGION_PREFIXES.some((p: string) => m.startsWith(p)))
           if (unprefixed) return provider.models[unprefixed]
         } else {
           for (const model of Object.keys(provider.models)) {

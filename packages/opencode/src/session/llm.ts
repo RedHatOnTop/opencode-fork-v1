@@ -126,7 +126,8 @@ const live: Layer.Layer<
         timestamp: Date.now(),
       })
 
-      const telemetryTracer = yield* Effect.serviceOption(OtelTracer.Tracer)
+      const _tracerOpt = yield* Effect.serviceOption(OtelTracer as any)
+      const telemetryTracer = Option.getOrUndefined(_tracerOpt as any) as any
 
       // Tool Calling Fallback Check
       // Only applies when model.capabilities.toolcall === false
@@ -545,9 +546,9 @@ const live: Layer.Layer<
             return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
               e instanceof Error ? e : new Error(String(e)),
             ).pipe(
-              Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
-              Stream.flatMap((events) => Stream.fromIterable(events)),
-            )
+              Stream.mapEffect((event: any) => LLMAISDK.toLLMEvents(state, event) as any),
+              Stream.flatMap((events: any) => Stream.fromIterable(events) as any),
+            ) as any
           }),
         ),
       )

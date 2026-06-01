@@ -1131,16 +1131,16 @@ export function Prompt(props: PromptProps) {
               id: PartID.ascending(),
               type: "text" as const,
               text: (() => {
-                const start = editorSelection.ranges[0].start
-                const end = editorSelection.ranges[0].end
+                const start = editorSelection.ranges[0].selection.start
+                const end = editorSelection.ranges[0].selection.end
 
                 let text = ""
                 if (start.line === end.line && start.character === end.character) {
                   text = `Note: The user opened the file "${editorSelection.filePath}".`
                 } else if (start.line === end.line) {
-                  text = `Note: The user selected line ${start.line + 1} from "${editorSelection.filePath}". \`\`\`${editorSelection.text}\`\`\`\n\n`
+                  text = `Note: The user selected line ${start.line + 1} from "${editorSelection.filePath}". \`\`\`${editorSelection.ranges[0].text}\`\`\`\n\n`
                 } else {
-                  text = `Note: The user selected lines ${start.line + 1} to ${end.line + 1} from "${editorSelection.filePath}". \`\`\`${editorSelection.text}\`\`\`\n\n`
+                  text = `Note: The user selected lines ${start.line + 1} to ${end.line + 1} from "${editorSelection.filePath}". \`\`\`${editorSelection.ranges[0].text}\`\`\`\n\n`
                 }
 
                 return `<system-reminder>${text} This may or may not be relevant to the current task.</system-reminder>\n`
@@ -1206,7 +1206,7 @@ export function Prompt(props: PromptProps) {
           agent: agent.name,
           model: selectedModel,
           variant,
-          thinkingEffort,
+          ...(thinkingEffort ? { thinkingEffort } as any : {}),
           parts: [
             ...editorParts,
             {

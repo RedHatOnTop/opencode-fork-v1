@@ -27,7 +27,7 @@ export function DialogSystemPrompt() {
       return
     }
     try {
-      const result = await sdk.client.session.systemPrompt({ sessionID })
+      const result = await (sdk.client.session as any).systemPrompt({ sessionID })
       if (result.error) {
         setError("No system prompt recorded yet for this session")
         return

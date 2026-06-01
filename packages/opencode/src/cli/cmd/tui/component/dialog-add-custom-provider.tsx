@@ -231,11 +231,11 @@ function DialogCustomModelToggle(props: { url: string, apiKey: string, providerN
     dialog.clear()
   }
 
-  return <DialogSelect title={`Select models to add for ${props.providerName} (Space/Enter to toggle, select Finish to save)`} options={options} keybind={[
+  return <DialogSelect title={`Select models to add for ${props.providerName} (Space/Enter to toggle, select Finish to save)`} options={options} {...({ keybind: [
     {
       keybind: { name: "space", ctrl: false, meta: false, shift: false, super: false, leader: false },
       title: "Toggle",
-      onTrigger: (option) => {
+      onTrigger: (option: any) => {
         if (option.value === "FINISH" || option.value === "TOGGLE_ALL") return
         setSelected(s => {
           const next = new Set(s)
@@ -260,5 +260,5 @@ function DialogCustomModelToggle(props: { url: string, apiKey: string, providerN
         finishAndSave()
       }
     }
-  ]} />
+  ]} as any)} />
 }

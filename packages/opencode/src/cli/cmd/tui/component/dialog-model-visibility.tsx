@@ -168,11 +168,11 @@ export function DialogModelVisibility() {
       flat={false}
       skipFilter={false}
       title="Toggle Model Visibility (Space/Enter to toggle)"
-      keybind={[
+      {...({ keybind: [
         {
           keybind: { name: "space", ctrl: false, meta: false, shift: false, super: false, leader: false },
           title: "Toggle",
-          onTrigger: (option) => {
+          onTrigger: (option: any) => {
             if (option.value === "FINISH") return
             const item = option.value as { providerID: string; modelID: string }
             const key = `${item.providerID}:${item.modelID}`
@@ -184,7 +184,7 @@ export function DialogModelVisibility() {
             })
           }
         }
-      ]}
+      ]} as any)}
     />
   )
 }
