@@ -74,7 +74,7 @@ function show(out: string) {
 
 const cli = yargs(args)
   .parserConfiguration({ "populate--": true })
-  .scriptName("opencode")
+  .scriptName("opencode-mod")
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
@@ -254,6 +254,22 @@ try {
     UI.error("Unexpected error, check log file at " + Log.file() + " for more details" + EOL)
     process.stderr.write(errorMessage(e) + EOL)
   }
+
+  // Write crash report to ~/.opencode/crash.json for Tauri Launcher IPC
+  try {
+    const fs = require('fs');
+    const os = require('os');
+    const crashFile = path.join(os.homedir(), '.opencode', 'crash.json');
+    fs.mkdirSync(path.dirname(crashFile), { recursive: true });
+    fs.writeFileSync(crashFile, JSON.stringify({
+      source: "Opencode CLI",
+      message: e instanceof Error ? e.message : (formatted || String(e)),
+      trace: e instanceof Error ? e.stack : "No stack trace available"
+    }));
+  } catch(err) {
+    // silently fail if crash file cannot be written
+  }
+
   process.exitCode = 1
 } finally {
   // Some subprocesses don't react properly to SIGTERM and similar signals.

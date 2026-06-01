@@ -10,7 +10,7 @@ void Log.init({
 
 const cli = yargs(hideBin(process.argv))
   .parserConfiguration({ "populate--": true })
-  .scriptName("opencode")
+  .scriptName("opencode-mod")
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")

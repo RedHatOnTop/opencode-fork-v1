@@ -423,7 +423,7 @@
       "name": "opencode",
       "version": "1.15.11-fork.1",
       "bin": {
-        "opencode": "./bin/opencode",
+        "opencode-mod": "./bin/opencode-mod",
       },
       "dependencies": {
         "@actions/core": "1.11.1",
