@@ -11,7 +11,7 @@ import { createTwoFilesPatch, diffLines } from "diff"
 import DESCRIPTION from "./edit.txt"
 import { File } from "../file"
 import { FileWatcher } from "../file/watcher"
-import { Bus } from "../bus"
+import { Bus } from "@/bus"
 import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
@@ -194,7 +194,7 @@ export const EditTool = Tool.define(
           const diagnostics = yield* lsp.diagnostics()
           const normalizedFilePath = AppFileSystem.normalizePath(filePath)
           const block = LSP.Diagnostic.report(filePath, diagnostics[normalizedFilePath] ?? [])
-          if (block) output += `\n\nLSP errors detected in this file, please fix:\n${block}`
+          if (block) output += `\n\n<system-reminder>\nLSP errors detected in this file! You MUST fix them before completing the task. Do NOT ask the user for help, fix it yourself:\n${block}\n</system-reminder>`
 
           return {
             metadata: {

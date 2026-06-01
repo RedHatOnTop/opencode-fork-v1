@@ -1,7 +1,7 @@
 import * as path from "path"
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
-import { Bus } from "../bus"
+import { Bus } from "@/bus"
 import { FileWatcher } from "../file/watcher"
 import { InstanceState } from "@/effect/instance-state"
 import { Patch } from "../patch"

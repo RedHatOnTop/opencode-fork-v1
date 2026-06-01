@@ -11,7 +11,7 @@ import { ModelID, ProviderID } from "../provider/schema"
 import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
-import { Bus } from "../bus"
+import { Bus } from "@/bus"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
@@ -1657,37 +1657,44 @@ export const layer = Layer.effect(
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
-    // 1. Feature layers (depend on many things)
-    Layer.provide(SessionRunState.defaultLayer),
-    Layer.provide(SessionStatus.defaultLayer),
-    Layer.provide(SessionCompaction.defaultLayer),
-    Layer.provide(SessionProcessor.defaultLayer),
-    Layer.provide(Command.defaultLayer),
-    Layer.provide(Permission.defaultLayer),
-    Layer.provide(MCP.defaultLayer),
-    Layer.provide(LSP.defaultLayer),
-    Layer.provide(ToolRegistry.defaultLayer),
-    Layer.provide(Truncate.defaultLayer),
-    Layer.provide(Instruction.defaultLayer),
-    Layer.provide(Session.defaultLayer),
-    Layer.provide(SessionRevert.defaultLayer),
-    Layer.provide(SessionSummary.defaultLayer),
-    Layer.provide(Mention.defaultLayer),
-    Layer.provide(Image.defaultLayer),
-    Layer.provide(Provider.defaultLayer),
-    Layer.provide(Plugin.defaultLayer),
-    Layer.provide(Agent.defaultLayer),
-    Layer.provide(SystemPrompt.defaultLayer),
-    Layer.provide(LLM.defaultLayer),
-    Layer.provide(Reference.defaultLayer),
-    Layer.provide(CrossSpawnSpawner.defaultLayer),
-    
-    // 2. Foundational layers (depended on by features above)
-    Layer.provide(EventV2Bridge.defaultLayer),
-    Layer.provide(AppFileSystem.defaultLayer),
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(RuntimeFlags.defaultLayer),
-    Layer.provide(Bus.layer),
+    // 1. Feature layers (part 1)
+    Layer.provide(
+      Layer.mergeAll(
+        SessionRunState.defaultLayer,
+        SessionStatus.defaultLayer,
+        SessionCompaction.defaultLayer,
+        SessionProcessor.defaultLayer,
+        Command.defaultLayer,
+        Permission.defaultLayer,
+        MCP.defaultLayer,
+        LSP.defaultLayer,
+        ToolRegistry.defaultLayer,
+        Truncate.defaultLayer,
+        Instruction.defaultLayer,
+        Session.defaultLayer,
+        SessionRevert.defaultLayer,
+        SessionSummary.defaultLayer,
+        Mention.defaultLayer,
+      )
+    ),
+    // 1. Feature layers (part 2) & 2. Foundational layers
+    Layer.provide(
+      Layer.mergeAll(
+        Image.defaultLayer,
+        Provider.defaultLayer,
+        Plugin.defaultLayer,
+        Agent.defaultLayer,
+        SystemPrompt.defaultLayer,
+        LLM.defaultLayer,
+        Reference.defaultLayer,
+        CrossSpawnSpawner.defaultLayer,
+        EventV2Bridge.defaultLayer,
+        AppFileSystem.defaultLayer,
+        Config.defaultLayer,
+        RuntimeFlags.defaultLayer,
+        Bus.layer,
+      )
+    )
   ),
 )
 const ModelRef = Schema.Struct({

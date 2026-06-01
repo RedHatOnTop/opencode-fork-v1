@@ -62,7 +62,6 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 const sharedDeps = Layer.mergeAll(
   Npm.defaultLayer,
   AppFileSystem.defaultLayer,
-  Bus.defaultLayer,
   Auth.defaultLayer,
   Config.defaultLayer,
   Git.defaultLayer,
@@ -118,7 +117,11 @@ export const AppLayer = Layer.mergeAll(
   SyncEvent.defaultLayer,
   EventV2Bridge.defaultLayer,
   DataMigration.defaultLayer,
-).pipe(Layer.provideMerge(InstanceLayer.layer), Layer.provideMerge(Observability.layer))
+).pipe(
+  Layer.provideMerge(Bus.defaultLayer),
+  Layer.provideMerge(InstanceLayer.layer),
+  Layer.provideMerge(Observability.layer),
+)
 
 const rt = ManagedRuntime.make(AppLayer as Layer.Layer<any, any, never>, { memoMap })
 type Runtime = Pick<typeof rt, "runSync" | "runPromise" | "runPromiseExit" | "runFork" | "runCallback" | "dispose">

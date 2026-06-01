@@ -5,7 +5,7 @@ import * as Tool from "./tool"
 import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch } from "diff"
 import DESCRIPTION from "./write.txt"
-import { Bus } from "../bus"
+import { Bus } from "@/bus"
 import { File } from "../file"
 import { FileWatcher } from "../file/watcher"
 import { Format } from "../format"
@@ -82,11 +82,11 @@ export const WriteTool = Tool.define(
             const block = LSP.Diagnostic.report(current ? filepath : file, issues)
             if (!block) continue
             if (current) {
-              output += `\n\nLSP errors detected in this file, please fix:\n${block}`
+              output += `\n\n<system-reminder>\nLSP errors detected in this file! You MUST fix them before completing the task. Do NOT ask the user for help, fix it yourself:\n${block}\n</system-reminder>`
               continue
             }
             projectDiagnosticsCount++
-            output += `\n\nLSP errors detected in other files:\n${block}`
+            output += `\n\n<system-reminder>\nLSP errors detected in other files (might be related):\n${block}\n</system-reminder>`
           }
 
           return {
