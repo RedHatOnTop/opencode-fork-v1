@@ -55,11 +55,11 @@ function runAuth(scenario: ActiveScenario) {
   })
 }
 
-function withContext<A, E>(
+function withContext<A, E, R>(
   options: Options,
   scenario: ActiveScenario,
   label: string,
-  use: (ctx: SeededContext<unknown>) => Effect.Effect<A, E>,
+  use: (ctx: SeededContext<unknown>) => Effect.Effect<A, E, R>,
 ) {
   return Effect.acquireRelease(
     Effect.gen(function* () {
@@ -128,16 +128,16 @@ function withContext<A, E>(
               return Bun.write(`${directory()}/${name}`, content)
             }).pipe(Effect.asVoid),
           session: (input) =>
-            run(modules.Session.Service.use((svc) => svc.create({ title: input?.title, parentID: input?.parentID }))),
+            run(modules.Session.Service.use((svc) => svc.create({ title: input?.title, parentID: input?.parentID }))) as any,
           sessionGet: (sessionID) =>
             run(modules.Session.Service.use((svc) => svc.get(sessionID))).pipe(
               Effect.catchCause(() => Effect.succeed(undefined)),
-            ),
+            ) as any,
           project: () =>
             Effect.sync(() => {
               if (!instance) throw new Error("scenario needs a project directory")
               return instance.project
-            }),
+            }) as any,
           message: (sessionID, input) =>
             Effect.gen(function* () {
               const info: MessageV2.User = {
@@ -167,14 +167,14 @@ function withContext<A, E>(
                 ),
               )
               return { info, part }
-            }),
+            }) as any,
           messages: (sessionID) =>
-            run(modules.Session.Service.use((svc) => svc.messages({ sessionID }).pipe(Effect.orDie))),
-          todos: (sessionID, todos) => run(modules.Todo.Service.use((svc) => svc.update({ sessionID, todos }))),
-          worktree: (input) => run(modules.Worktree.Service.use((svc) => svc.create(input).pipe(Effect.orDie))),
+            run(modules.Session.Service.use((svc) => svc.messages({ sessionID }).pipe(Effect.orDie))) as any,
+          todos: (sessionID, todos) => run(modules.Todo.Service.use((svc) => svc.update({ sessionID, todos }))) as any,
+          worktree: (input) => run(modules.Worktree.Service.use((svc) => svc.create(input).pipe(Effect.orDie))) as any,
           worktreeRemove: (directory) =>
-            run(modules.Worktree.Service.use((svc) => svc.remove({ directory })).pipe(Effect.ignore)),
-          llmText: (value) => Effect.suspend(() => llm().text(value)),
+            run(modules.Worktree.Service.use((svc) => svc.remove({ directory })).pipe(Effect.ignore)) as any,
+          llmText: (value) => Effect.suspend(() => llm().text(value)) as any,
           llmWait: (count) => Effect.suspend(() => llm().wait(count)),
           tuiRequest: (request) => Effect.sync(() => modules.Tui.submitTuiRequest(request)),
         }

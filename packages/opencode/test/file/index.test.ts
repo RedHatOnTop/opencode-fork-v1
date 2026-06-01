@@ -5,6 +5,7 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import path from "path"
 import fs from "fs/promises"
 import { File } from "../../src/file"
+import { Bus } from "../../src/bus"
 import { disposeAllInstances, TestInstance, withTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -12,7 +13,7 @@ afterEach(async () => {
   await disposeAllInstances()
 })
 
-const it = testEffect(Layer.mergeAll(File.defaultLayer, AppFileSystem.defaultLayer))
+const it = testEffect(Layer.mergeAll(File.defaultLayer, AppFileSystem.defaultLayer, Bus.defaultLayer))
 
 const init = Effect.fn("FileTest.init")(function* () {
   const file = yield* File.Service

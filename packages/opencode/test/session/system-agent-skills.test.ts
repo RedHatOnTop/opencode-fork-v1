@@ -2,9 +2,8 @@ import { describe, expect, test } from "bun:test"
 import path from "path"
 import { Effect } from "effect"
 import { Agent } from "../../src/agent/agent"
-import { Instance } from "../../src/project/instance"
 import { SystemPrompt } from "../../src/session/system"
-import { provideInstance, tmpdir } from "../fixture/fixture"
+import { provideInstance, provideTestInstance, tmpdir } from "../fixture/fixture"
 
 function load<A>(dir: string, fn: (svc: Agent.Interface) => Effect.Effect<A>) {
   return Effect.runPromise(provideInstance(dir)(Agent.Service.use(fn)).pipe(Effect.provide(Agent.defaultLayer)))
@@ -36,13 +35,13 @@ This is a test skill.
     process.env.OPENCODE_TEST_HOME = tmp.path
 
     try {
-      await Instance.provide({
+      await provideTestInstance({
         directory: tmp.path,
         fn: async () => {
           const code = await load(tmp.path, (svc) => svc.get("code"))
           const runSkills = Effect.gen(function* () {
             const svc = yield* SystemPrompt.Service
-            return yield* svc.skills(code!)
+            return yield* svc.skills(code as any)
           }).pipe(Effect.provide(SystemPrompt.defaultLayer))
 
           const result = await Effect.runPromise(runSkills as any)
@@ -84,13 +83,13 @@ This is an architect skill.
     process.env.OPENCODE_TEST_HOME = tmp.path
 
     try {
-      await Instance.provide({
+      await provideTestInstance({
         directory: tmp.path,
         fn: async () => {
           const architect = await load(tmp.path, (svc) => svc.get("architect"))
           const runSkills = Effect.gen(function* () {
             const svc = yield* SystemPrompt.Service
-            return yield* svc.skills(architect!)
+            return yield* svc.skills(architect as any)
           }).pipe(Effect.provide(SystemPrompt.defaultLayer))
 
           const result = await Effect.runPromise(runSkills as any)
@@ -129,13 +128,13 @@ This is an ask skill.
     process.env.OPENCODE_TEST_HOME = tmp.path
 
     try {
-      await Instance.provide({
+      await provideTestInstance({
         directory: tmp.path,
         fn: async () => {
           const ask = await load(tmp.path, (svc) => svc.get("ask"))
           const runSkills = Effect.gen(function* () {
             const svc = yield* SystemPrompt.Service
-            return yield* svc.skills(ask!)
+            return yield* svc.skills(ask as any)
           }).pipe(Effect.provide(SystemPrompt.defaultLayer))
 
           const result = await Effect.runPromise(runSkills as any)
@@ -174,14 +173,14 @@ This is a fallback skill.
     process.env.OPENCODE_TEST_HOME = tmp.path
 
     try {
-      await Instance.provide({
+      await provideTestInstance({
         directory: tmp.path,
         fn: async () => {
           // Use "default" agent which may not have specific profile
           const defaultAgent = await load(tmp.path, (svc) => svc.get("default"))
           const runSkills = Effect.gen(function* () {
             const svc = yield* SystemPrompt.Service
-            return yield* svc.skills(defaultAgent!)
+            return yield* svc.skills(defaultAgent as any)
           }).pipe(Effect.provide(SystemPrompt.defaultLayer))
 
           const result = await Effect.runPromise(runSkills as any)
@@ -220,13 +219,13 @@ This is a consistent skill.
     process.env.OPENCODE_TEST_HOME = tmp.path
 
     try {
-      await Instance.provide({
+      await provideTestInstance({
         directory: tmp.path,
         fn: async () => {
           const code = await load(tmp.path, (svc) => svc.get("code"))
           const runSkills = Effect.gen(function* () {
             const svc = yield* SystemPrompt.Service
-            return yield* svc.skills(code!)
+            return yield* svc.skills(code as any)
           }).pipe(Effect.provide(SystemPrompt.defaultLayer))
 
           const first = await Effect.runPromise(runSkills as any)

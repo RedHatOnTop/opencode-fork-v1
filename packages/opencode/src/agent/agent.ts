@@ -390,7 +390,7 @@ export const layer = Layer.effect(
         const resolved = yield* provider.getModel(model.providerID, model.modelID)
         const language = yield* provider.getLanguage(resolved)
         const tracer = cfg.experimental?.openTelemetry
-          ? Option.getOrUndefined(yield* Effect.serviceOption(OtelTracer.OtelTracer))
+          ? Option.getOrUndefined(yield* Effect.serviceOption(OtelTracer as any))
           : undefined
 
         const system = [PROMPT_GENERATE]
@@ -404,7 +404,7 @@ export const layer = Layer.effect(
         const params = {
           experimental_telemetry: {
             isEnabled: cfg.experimental?.openTelemetry,
-            tracer,
+            tracer: tracer as any,
             metadata: {
               userId: cfg.username ?? "unknown",
             },

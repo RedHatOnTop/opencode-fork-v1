@@ -20,7 +20,7 @@ import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { InstanceState } from "@/effect/instance-state"
+
 import { Sandbox } from "@/sandbox/state"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"

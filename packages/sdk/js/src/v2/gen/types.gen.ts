@@ -27,6 +27,8 @@ export type Event =
   | EventTodoUpdated
   | EventSessionStatus
   | EventSessionIdle
+  | EventWorkflowPhaseChanged
+  | EventWorkflowModeChanged
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventCommandExecuted
@@ -420,6 +422,7 @@ export type UserMessage = {
     providerID: string
     modelID: string
     variant?: string
+    thinkingEffort?: string
   }
   system?: string
   tools?: {
@@ -734,7 +737,7 @@ export type Part =
   | RetryPart
   | CompactionPart
 
-export type PermissionAction = "allow" | "deny" | "ask"
+export type PermissionAction = "allow" | "deny" | "ask" | "queue"
 
 export type PermissionRule = {
   permission: string
@@ -828,6 +831,8 @@ export type GlobalEvent = {
     | EventTodoUpdated
     | EventSessionStatus
     | EventSessionIdle
+    | EventWorkflowPhaseChanged
+    | EventWorkflowModeChanged
     | EventMcpToolsChanged
     | EventMcpBrowserOpenFailed
     | EventCommandExecuted
@@ -1197,12 +1202,26 @@ export type Config = {
   skills?: {
     paths?: Array<string>
     urls?: Array<string>
+    /**
+     * Maximum tokens for on-demand loaded skills (default: 4000)
+     */
+    max_loaded_tokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    /**
+     * BM25 score boost multiplier for CORE tier skills (default: 1.5)
+     */
+    core_boost?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    /**
+     * Default number of search results (default: 10)
+     */
+    search_limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
   reference?: ReferenceConfig
   watcher?: {
     ignore?: Array<string>
   }
   snapshot?: boolean
+  shell_allowlist?: Array<string>
+  shell_denylist?: Array<string>
   plugin?: Array<
     | string
     | [
@@ -1312,10 +1331,37 @@ export type Config = {
   experimental?: {
     disable_paste_summary?: boolean
     batch_tool?: boolean
-    openTelemetry?: boolean
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
+    openTelemetry?: boolean
+  }
+  verify?: {
+    commands?: Array<string>
+    auto_fix?: boolean
+    max_retries?: number
+  }
+  /**
+   * Approval mode for tool execution (default: 'default')
+   */
+  approval_mode?: "strict" | "default" | "autopilot" | "yolo"
+  blocked_commands?: {
+    destructive?: Array<string>
+    network?: Array<string>
+    system_install?: Array<string>
+  }
+  notification?: {
+    enabled?: boolean
+  }
+  graphify?: {
+    enabled?: boolean
+    auto_query?: boolean
+    graph_path?: string
+  }
+  sandbox?: {
+    enabled?: boolean
+    network?: "bridge" | "none"
+    image?: string
   }
 }
 
@@ -2655,6 +2701,25 @@ export type EventSessionIdle = {
   type: "session.idle"
   properties: {
     sessionID: string
+  }
+}
+
+export type EventWorkflowPhaseChanged = {
+  id: string
+  type: "workflow.phase_changed"
+  properties: {
+    previousPhase: "plan" | "execute" | "verify" | "ship" | "idle"
+    newPhase: "plan" | "execute" | "verify" | "ship" | "idle"
+    mode: "spec" | "vibe"
+  }
+}
+
+export type EventWorkflowModeChanged = {
+  id: string
+  type: "workflow.mode_changed"
+  properties: {
+    previousMode: "spec" | "vibe"
+    newMode: "spec" | "vibe"
   }
 }
 
@@ -6387,6 +6452,7 @@ export type SessionPromptData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    thinkingEffort?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -6734,6 +6800,7 @@ export type SessionPromptAsyncData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    thinkingEffort?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
