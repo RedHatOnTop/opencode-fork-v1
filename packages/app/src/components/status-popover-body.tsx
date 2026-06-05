@@ -5,8 +5,9 @@ import { Switch } from "@opencode-ai/ui/switch"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { useMutation, useQueryClient } from "@tanstack/solid-query"
 import { showToast } from "@opencode-ai/ui/toast"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { useNavigate } from "@solidjs/router"
-import { type Accessor, createEffect, createMemo, For, type JSXElement, onCleanup, Show } from "solid-js"
+import { type Accessor, createEffect, createMemo, For, type JSXElement, onCleanup, Show, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
 import { useLanguage } from "@/context/language"
@@ -15,7 +16,7 @@ import { useSDK } from "@/context/sdk"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { type ServerHealth } from "@/utils/server-health"
-import { useQueryOptions } from "@/context/server-sync"
+import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import { useServers } from "@/context/servers"
 
@@ -434,47 +435,100 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                   {(name) => {
                     const status = () => mcpStatus(name)
                     const enabled = () => status() === "connected"
+                    const serverSync = useServerSync()
+                    const mcpConfig = () => serverSync.data.config.mcp?.[name] as any
+                    const hasEnvironment = () => mcpConfig()?.type === "local" && mcpConfig()?.environment && Object.keys(mcpConfig()?.environment || {}).length > 0
+                    const [expanded, setExpanded] = createSignal(false)
+                    const [envVars, setEnvVars] = createSignal<Record<string, string>>(mcpConfig()?.environment || {})
+
                     return (
-                      <button
-                        type="button"
-                        class="flex items-center gap-2 w-full min-h-8 pl-3 pr-2 py-1 rounded-md hover:bg-surface-raised-base-hover transition-colors text-left"
-                        onClick={() => {
-                          if (toggleMcp.isPending) return
-                          toggleMcp.mutate(name)
-                        }}
-                        disabled={toggleMcp.isPending && toggleMcp.variables === name}
-                      >
-                        <div
-                          classList={{
-                            "size-1.5 rounded-full shrink-0": true,
-                            "bg-icon-success-base": status() === "connected",
-                            "bg-icon-critical-base": status() === "failed",
-                            "bg-border-weak-base": status() === "disabled",
-                            "bg-icon-warning-base":
-                              status() === "needs_auth" || status() === "needs_client_registration",
-                          }}
-                        />
-                        <span class="flex flex-col min-w-0 flex-1">
-                          <span class="flex items-center gap-2 min-w-0">
-                            <span class="text-14-regular text-text-base truncate">{name}</span>
-                          </span>
-                          <Show when={status() === "needs_auth"}>
-                            <span class="text-11-regular text-text-weaker truncate">
-                              {language.t("mcp.auth.clickToAuthenticate")}
-                            </span>
-                          </Show>
-                        </span>
-                        <div onClick={(event) => event.stopPropagation()}>
-                          <Switch
-                            checked={enabled()}
-                            disabled={toggleMcp.isPending && toggleMcp.variables === name}
-                            onChange={() => {
+                      <div class="flex flex-col w-full">
+                        <button
+                          type="button"
+                          class="flex items-center gap-2 w-full min-h-8 pl-3 pr-2 py-1 rounded-md hover:bg-surface-raised-base-hover transition-colors text-left"
+                          onClick={() => {
+                            if (hasEnvironment()) {
+                              setExpanded(!expanded())
+                            } else {
                               if (toggleMcp.isPending) return
                               toggleMcp.mutate(name)
+                            }
+                          }}
+                          disabled={toggleMcp.isPending && toggleMcp.variables === name}
+                        >
+                          <div
+                            classList={{
+                              "size-1.5 rounded-full shrink-0": true,
+                              "bg-icon-success-base": status() === "connected",
+                              "bg-icon-critical-base": status() === "failed",
+                              "bg-border-weak-base": status() === "disabled",
+                              "bg-icon-warning-base":
+                                status() === "needs_auth" || status() === "needs_client_registration",
                             }}
                           />
-                        </div>
-                      </button>
+                          <span class="flex flex-col min-w-0 flex-1">
+                            <span class="flex items-center gap-2 min-w-0">
+                              <span class="text-14-regular text-text-base truncate">{name}</span>
+                              <Show when={hasEnvironment()}>
+                                <Icon name={expanded() ? "chevron-up" : "chevron-down"} size="small" class="text-icon-weak" />
+                              </Show>
+                            </span>
+                            <Show when={status() === "needs_auth"}>
+                              <span class="text-11-regular text-text-weaker truncate">
+                                {language.t("mcp.auth.clickToAuthenticate")}
+                              </span>
+                            </Show>
+                          </span>
+                          <div onClick={(event) => event.stopPropagation()}>
+                            <Switch
+                              checked={enabled()}
+                              disabled={toggleMcp.isPending && toggleMcp.variables === name}
+                              onChange={() => {
+                                if (toggleMcp.isPending) return
+                                toggleMcp.mutate(name)
+                              }}
+                            />
+                          </div>
+                        </button>
+                        <Show when={expanded() && hasEnvironment()}>
+                          <div class="flex flex-col gap-2 p-2 mx-2 mb-2 bg-surface-base rounded-md border border-border-base mt-1">
+                            <For each={Object.keys(mcpConfig()?.environment || {})}>
+                              {(envKey) => (
+                                <div class="flex flex-col gap-1">
+                                  <span class="text-12-regular text-text-weak">{envKey}</span>
+                                  <TextField
+                                    value={envVars()[envKey] || ""}
+                                    onChange={(val) => setEnvVars((prev) => ({ ...prev, [envKey]: val }))}
+                                  />
+                                </div>
+                              )}
+                            </For>
+                            <div class="flex justify-end gap-2 mt-1">
+                              <Button
+                                variant="primary"
+                                class="h-6 px-2 text-11-regular"
+                                onClick={() => {
+                                  serverSync.updateConfig({
+                                    mcp: {
+                                      ...serverSync.data.config.mcp,
+                                      [name]: {
+                                        ...mcpConfig(),
+                                        environment: {
+                                          ...mcpConfig()?.environment,
+                                          ...envVars(),
+                                        },
+                                      },
+                                    },
+                                  })
+                                  setExpanded(false)
+                                }}
+                              >
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        </Show>
+                      </div>
                     )
                   }}
                 </For>
