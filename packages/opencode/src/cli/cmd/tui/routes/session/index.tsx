@@ -1554,19 +1554,21 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     setExpanded((prev) => !prev)
   }
 
+  const isOpen = createMemo(() => !inMinimal() || !isDone() || expanded())
+
   return (
     <Show when={content()}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexDirection="column" flexShrink={0}>
         <box onMouseUp={toggle}>
           <ReasoningHeader
-            toggleable={inMinimal()}
-            open={!inMinimal() || expanded()}
+            toggleable={inMinimal() && isDone()}
+            open={isOpen()}
             done={isDone()}
             title={summary().title}
             duration={isDone() ? Locale.duration(duration()) : undefined}
           />
         </box>
-        <Show when={(!inMinimal() || expanded()) && summary().body}>
+        <Show when={isOpen() && summary().body}>
           <box paddingLeft={inMinimal() ? 2 : 0} marginTop={1}>
             <code
               filetype="markdown"
