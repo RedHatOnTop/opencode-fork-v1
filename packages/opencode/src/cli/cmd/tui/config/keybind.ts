@@ -122,7 +122,7 @@ export const Definitions = {
   provider_connect: keybind("none", "Connect provider"),
   console_org_switch: keybind("none", "Switch console organization"),
   agent_list: keybind("<leader>a", "List agents"),
-    agent_workflow_toggle: keybind("tab", "Toggle spec/vibe mode"),
+    agent_workflow_toggle: keybind("none", "Toggle spec/vibe mode"),
     agent_workflow_toggle_reverse: keybind("shift+tab", "Toggle spec/vibe mode (reverse)"),
     agent_cycle: keybind("none", "Next agent"),
     agent_cycle_reverse: keybind("none", "Previous agent"),

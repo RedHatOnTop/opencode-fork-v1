@@ -153,6 +153,7 @@ export function Prompt(props: PromptProps) {
   const keymap = useOpencodeKeymap()
   const agentShortcut = useCommandShortcut("agent.cycle")
   const paletteShortcut = useCommandShortcut("command.palette.show")
+  const workflowToggleShortcut = useCommandShortcut("agent.workflow.toggle")
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   const { theme, syntax } = useTheme()
@@ -1785,10 +1786,7 @@ export function Prompt(props: PromptProps) {
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
-                        {(() => {
-                          const shortcut = useCommandShortcut("agent.workflow.toggle")
-                          return shortcut() || "N/A"
-                        })()}{" "}
+                        {workflowToggleShortcut() || "N/A"}{" "}
                         <span style={{ fg: theme.textMuted }}>
                           {local.workflow.mode() === "spec" ? "spec" : "vibe"}
                         </span>

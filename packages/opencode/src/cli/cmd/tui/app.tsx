@@ -107,6 +107,7 @@ const appBindingCommands = [
   "mcp.list",
   "agent.cycle",
   "agent.cycle.reverse",
+  "agent.workflow.toggle",
   "variant.cycle",
   "variant.list",
   "provider.connect",
