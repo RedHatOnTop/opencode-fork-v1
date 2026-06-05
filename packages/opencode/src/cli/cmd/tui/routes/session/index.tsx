@@ -7,6 +7,7 @@ import {
   For,
   Match,
   on,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -224,6 +225,13 @@ export function Session() {
   const sdk = useSDK()
   const editor = useEditorContext()
 
+  onMount(() => {
+    const timer = setInterval(() => {
+      setShowScrollToBottom(!isNearBottom())
+    }, 200)
+    onCleanup(() => clearInterval(timer))
+  })
+
   createEffect(() => {
     const sessionID = route.sessionID
     void (async () => {
@@ -366,10 +374,20 @@ export function Session() {
     dialog.clear()
   }
 
+  const BOTTOM_THRESHOLD = 5
+  const [showScrollToBottom, setShowScrollToBottom] = createSignal(false)
+
+  function isNearBottom() {
+    if (!scroll || scroll.isDestroyed) return true
+    const maxScroll = Math.max(0, scroll.scrollHeight - scroll.height)
+    return scroll.scrollTop >= maxScroll - BOTTOM_THRESHOLD
+  }
+
   function toBottom() {
     setTimeout(() => {
       if (!scroll || scroll.isDestroyed) return
       scroll.scrollTo(scroll.scrollHeight)
+      setShowScrollToBottom(false)
     }, 50)
   }
 
@@ -1072,6 +1090,19 @@ export function Session() {
   // snap to bottom when session changes
   createEffect(on(() => route.sessionID, toBottom))
 
+  createEffect(() => {
+    const _msgs = messages()
+    const _pending = pending()
+    if (!_msgs.length) return
+    setTimeout(() => {
+      if (!scroll || scroll.isDestroyed) return
+      if (isNearBottom()) {
+        scroll.scrollTo(scroll.scrollHeight)
+        setShowScrollToBottom(false)
+      }
+    }, 60)
+  })
+
   return (
     <PathFormatterProvider path={session()?.directory}>
       <context.Provider
@@ -1209,6 +1240,18 @@ export function Session() {
                   )}
                 </For>
               </scrollbox>
+              <Show when={showScrollToBottom()}>
+                <box
+                  position="absolute"
+                  bottom={1}
+                  right={4}
+                  onMouseUp={() => toBottom()}
+                >
+                  <text fg={theme.textMuted} bg={theme.backgroundElement}>
+                    {" End "}
+                  </text>
+                </box>
+              </Show>
               <box flexShrink={0}>
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt request={permissions()[0]} />
