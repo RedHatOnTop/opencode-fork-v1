@@ -2,6 +2,9 @@ import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
+import { ensureLoopbackNoProxy } from "@/util/network"
+
+ensureLoopbackNoProxy()
 
 export const ServeCommand = effectCmd({
   command: "serve",

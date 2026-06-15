@@ -5,6 +5,9 @@ import { ServerAuth } from "@/server/auth"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { ACPProfile } from "@/acp/profile"
+import { ensureLoopbackNoProxy } from "@/util/network"
+
+ensureLoopbackNoProxy()
 
 export const AcpCommand = effectCmd({
   command: "acp",

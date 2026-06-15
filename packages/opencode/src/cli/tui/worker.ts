@@ -10,7 +10,9 @@ import { Heap } from "@/cli/heap"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { ensureLoopbackNoProxy } from "@/util/network"
 
+ensureLoopbackNoProxy()
 Heap.start()
 
 // Subscribe to global events and forward them via RPC
