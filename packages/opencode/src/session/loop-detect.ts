@@ -89,17 +89,20 @@ export interface LoopResult {
 function extractToolCalls(messages: ReadonlyArray<MessageLike>): { sigs: string[]; files: string[] } {
   const sigs: string[] = []
   const files: string[] = []
-  for (const msg of messages) {
-    for (const part of msg.parts) {
+  const maxCalls = WINDOW_SIZE * 3
+  for (let mi = messages.length - 1; mi >= 0 && sigs.length < maxCalls; mi--) {
+    const parts = messages[mi].parts
+    for (let pi = parts.length - 1; pi >= 0; pi--) {
+      const part = parts[pi]
       if (!isToolPart(part)) continue
       const state = part.state
       if (state.status !== "completed" && state.status !== "running") continue
       const args = state.input
       if (!args || typeof args !== "object") continue
 
-      sigs.push(toolSignature(part.tool, args))
+      sigs.unshift(toolSignature(part.tool, args))
       const file = extractFileFromArgs(part.tool, args)
-      if (file) files.push(file)
+      if (file) files.unshift(file)
     }
   }
   return { sigs, files }
