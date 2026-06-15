@@ -2,12 +2,20 @@ Launch a new agent to handle complex, multistep tasks autonomously.
 
 When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
 
+When to use the Task tool (be proactive):
+- Codebase exploration that may require more than 2-3 search calls (use subagent_type "explore")
+- Understanding how a feature works across multiple files or modules
+- Tracing data flow, dependency chains, or call graphs
+- Investigating a bug whose origin is unknown
+- Any multi-step research task where you need a concise answer, not the raw search output
+- Independent sub-tasks that can run in parallel (launch multiple in one message)
+
 When NOT to use the Task tool:
 - If you want to read a specific file path, use the Read or Glob tool instead of the Task tool, to find the match more quickly
-- If you are searching for a specific class definition like "class Foo", use the Grep tool instead, to find the match more quickly
-- If you are searching for code within a specific file or set of 2-3 files, use the Read tool instead of the Task tool, to find the match more quickly
+- If you are searching for a specific class definition like "class Foo", use the Grep tool instead of the Task tool, to find the match more quickly
+- If you are searching for code within a specific file or set of 2-3 files, use the Read tool instead of the Task tool
+- If you already know the exact location, act directly instead of delegating
 - If no available agent is a good fit for the task, use other tools directly
-
 
 Usage notes:
 1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
@@ -17,3 +25,4 @@ Usage notes:
 5. The agent's outputs should generally be trusted
 6. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent. Tell it how to verify its work if possible (e.g., relevant test commands).
 7. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
+8. Prefer delegation over direct exploration: your context window is finite, and a subagent's verbose search output does not consume it. Delegate first, then act on the concise result.
