@@ -59,6 +59,7 @@ import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
+import { LoopDetect } from "./loop-detect"
 import { LLMEvent } from "@opencode-ai/llm"
 
 // @ts-ignore
@@ -1229,7 +1230,8 @@ export const layer = Layer.effect(
             throw error
           }
           const maxSteps = agent.steps ?? Infinity
-          const isLastStep = step >= maxSteps
+          const loopResult = LoopDetect.check(msgs, step)
+          const isLastStep = loopResult.isLoop || step >= maxSteps
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
             Effect.provideService(RuntimeFlags.Service, flags),
             Effect.provideService(FSUtil.Service, fsys),
