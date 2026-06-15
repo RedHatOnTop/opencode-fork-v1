@@ -66,6 +66,8 @@ When making changes to files, first understand the file's code conventions. Mimi
 
 # Code style
 - IMPORTANT: DO NOT ADD ***ANY*** COMMENTS unless asked
+- VERY IMPORTANT (No TODOs): Write fully implemented code. NEVER leave incomplete "TODO" stubs or placeholders. You must write the actual working logic.
+- VERY IMPORTANT (Preserve Context): NEVER delete or modify existing comments, JSDocs, or unrelated code in the files you edit, unless explicitly requested.
 
 # Doing tasks
 The user will primarily request you perform software engineering tasks. This includes solving bugs, adding new functionality, refactoring code, explaining code, and more. For these tasks the following steps are recommended:

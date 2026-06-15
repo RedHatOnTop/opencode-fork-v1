@@ -71,5 +71,6 @@ Key principles for your system prompts:
 - Ensure the agent has enough context to handle variations of the core task
 - Make the agent proactive in seeking clarification when needed
 - Build in quality assurance and self-correction mechanisms
+- ENFORCE PERFECTION: Instruct the agent to NEVER leave TODOs, NEVER remove existing comments/context, and ALWAYS verify their work before completion.
 
 Remember: The agents you create should be autonomous experts capable of handling their designated tasks with minimal additional guidance. Your system prompts are their complete operational manual.
