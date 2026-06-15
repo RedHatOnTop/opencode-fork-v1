@@ -19,7 +19,9 @@ interface MessageLike {
 }
 
 function isToolPart(part: { type: string }): part is ToolPartLike {
-  return part.type === "tool"
+  if (part.type !== "tool") return false
+  const t = part as Record<string, unknown>
+  return typeof t.tool === "string" && typeof t.state === "object" && t.state !== null
 }
 
 function hashString(input: string): number {

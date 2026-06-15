@@ -21,7 +21,9 @@ import { ImportCommand } from "./cli/cmd/import"
 import { AttachCommand } from "./cli/cmd/attach"
 import { TuiThreadCommand } from "./cli/cmd/tui"
 import { AcpCommand } from "./cli/cmd/acp"
-import { EOL } from "os"
+import { EOL, homedir } from "os"
+import path from "node:path"
+import { mkdirSync, writeFileSync } from "node:fs"
 import { WebCommand } from "./cli/cmd/web"
 import { PrCommand } from "./cli/cmd/pr"
 import { SessionCommand } from "./cli/cmd/session"
@@ -131,6 +133,21 @@ try {
   if (formatted === undefined) {
     UI.error("Unexpected error" + EOL)
     process.stderr.write(errorMessage(e) + EOL)
+  }
+  // Write crash report to ~/.opencode/crash.json for the Tauri launcher
+  try {
+    const crashFile = path.join(homedir(), ".opencode", "crash.json")
+    mkdirSync(path.dirname(crashFile), { recursive: true })
+    writeFileSync(
+      crashFile,
+      JSON.stringify({
+        source: "opencode-mod CLI",
+        message: e instanceof Error ? e.message : formatted || String(e),
+        trace: e instanceof Error ? e.stack : "No stack trace available",
+      }),
+    )
+  } catch {
+    // best-effort; must not mask the original error
   }
   process.exitCode = 1
 } finally {

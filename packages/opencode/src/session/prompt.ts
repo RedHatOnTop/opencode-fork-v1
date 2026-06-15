@@ -1232,6 +1232,14 @@ export const layer = Layer.effect(
           const maxSteps = agent.steps ?? Infinity
           const loopResult = LoopDetect.check(msgs, step)
           const isLastStep = loopResult.isLoop || step >= maxSteps
+          if (isLastStep) {
+            yield* Effect.logInfo("step limit reached", {
+              "session.id": sessionID,
+              step,
+              maxSteps,
+              reason: loopResult.isLoop ? loopResult.reason : "max_steps",
+            })
+          }
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
             Effect.provideService(RuntimeFlags.Service, flags),
             Effect.provideService(FSUtil.Service, fsys),
