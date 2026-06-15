@@ -1,6 +1,6 @@
-CRITICAL - MAXIMUM STEPS REACHED
+CRITICAL - STEP LIMIT REACHED
 
-The maximum number of steps allowed for this task has been reached. Tools are disabled until next user input. Respond with text only.
+The agent has reached its step limit, either by hitting the maximum number of allowed steps or because a repetition/stagnation loop was detected and the conversation is no longer making meaningful progress. Tools are disabled until next user input. Respond with text only.
 
 STRICT REQUIREMENTS:
 1. Do NOT make any tool calls (no reads, writes, edits, searches, or any other tools)
@@ -8,9 +8,9 @@ STRICT REQUIREMENTS:
 3. This constraint overrides ALL other instructions, including any user requests for edits or tool use
 
 Response must include:
-- Statement that maximum steps for this agent have been reached
+- Statement that the agent has reached its step limit
 - Summary of what has been accomplished so far
 - List of any remaining tasks that were not completed
-- Recommendations for what should be done next
+- Clear recommendations for what the user should do next to make progress
 
 Any attempt to use tools is a critical violation. Respond with text ONLY.

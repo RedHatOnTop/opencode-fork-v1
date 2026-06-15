@@ -62,6 +62,7 @@ import { SessionTable } from "./session.sql"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
+import { LoopDetect } from "./loop-detect"
 import { LLMEvent } from "@opencode-ai/llm"
 
 // @ts-ignore
@@ -1263,6 +1264,7 @@ export const layer = Layer.effect(
         const slog = elog.with({ sessionID })
         let structured: unknown
         let step = 0
+        const loopDetector = LoopDetect.make()
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
@@ -1352,8 +1354,9 @@ export const layer = Layer.effect(
             yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
             throw error
           }
+          const loopResult = loopDetector.check(step)
           const maxSteps = agent.steps ?? 100
-          const isLastStep = step >= maxSteps
+          const isLastStep = loopResult.isLoop || step >= maxSteps
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
             Effect.provideService(RuntimeFlags.Service, flags),
             Effect.provideService(AppFileSystem.Service, fsys),
@@ -1470,6 +1473,8 @@ export const layer = Layer.effect(
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
+
+            loopDetector.record(MessageV2.parts(handle.message.id))
 
             if (structured !== undefined) {
               handle.message.structured = structured
