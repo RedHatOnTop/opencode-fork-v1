@@ -20,9 +20,14 @@ import { isRecord } from "@/util/record"
 
 const CLAUDE_EXTERNAL_DIR = ".claude"
 const AGENTS_EXTERNAL_DIR = ".agents"
+const ZCODE_EXTERNAL_DIR = ".zcode"
 const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
 const OPENCODE_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
 const SKILL_PATTERN = "**/SKILL.md"
+// zcode plugins bundle skills under versioned plugin cache dirs
+// (e.g. ~/.zcode/cli/plugins/cache/<marketplace>/<plugin>/<ver>/skills/<skill>/SKILL.md).
+const ZCODE_PLUGIN_CACHE_DIR = "cli/plugins/cache"
+const ZCODE_PLUGIN_SKILL_PATTERN = "**/skills/**/SKILL.md"
 
 // Built-in skill that ships with opencode. The model's intuition for what an
 // opencode.json should look like is often wrong, and opencode hard-fails on
@@ -177,6 +182,7 @@ const discoverSkills = Effect.fnUntraced(function* (
   global: Global.Interface,
   disableExternalSkills: boolean,
   disableClaudeCodeSkills: boolean,
+  disableZcodeSkills: boolean,
   directory: string,
   worktree: string,
 ) {
@@ -186,6 +192,7 @@ const discoverSkills = Effect.fnUntraced(function* (
   if (!disableExternalSkills) {
     if (!disableClaudeCodeSkills) externalDirs.push(CLAUDE_EXTERNAL_DIR)
     externalDirs.push(AGENTS_EXTERNAL_DIR)
+    if (!disableZcodeSkills) externalDirs.push(ZCODE_EXTERNAL_DIR)
 
     for (const dir of externalDirs) {
       const root = path.join(global.home, dir)
@@ -193,11 +200,20 @@ const discoverSkills = Effect.fnUntraced(function* (
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
     }
 
-    const upDirs = yield* fsys
+    // zcode plugins bundle skills under versioned cache dirs that do not sit under
+    // a top-level skills/ folder, so they need their own scan.
+    if (!disableZcodeSkills) {
+      const pluginCacheRoot = path.join(global.home, ZCODE_EXTERNAL_DIR, ZCODE_PLUGIN_CACHE_DIR)
+      if (yield* fsys.isDir(pluginCacheRoot)) {
+        yield* scan(state, pluginCacheRoot, ZCODE_PLUGIN_SKILL_PATTERN, { dot: true, scope: "global" })
+      }
+    }
+
+    const upDir = yield* fsys
       .up({ targets: externalDirs, start: directory, stop: worktree })
       .pipe(Effect.catch(() => Effect.succeed([] as string[])))
 
-    for (const root of upDirs) {
+    for (const root of upDir) {
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "project" })
     }
   }
@@ -265,6 +281,7 @@ export const layer = Layer.effect(
           global,
           flags.disableExternalSkills,
           flags.disableClaudeCodeSkills,
+          flags.disableZcodeSkills,
           ctx.directory,
           ctx.worktree,
         )

@@ -22,9 +22,12 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { withTimeout } from "@/util/timeout"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { Global } from "@opencode-ai/core/global"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
+import { discoverClaudeCodeMcpServers } from "./claude-code-sources"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { TuiEvent } from "@/server/tui-event"
@@ -195,6 +198,9 @@ export const layer = Layer.effect(
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const auth = yield* McpAuth.Service
     const events = yield* EventV2Bridge.Service
+    const fsys = yield* FSUtil.Service
+    const global = yield* Global.Service
+    const runtimeFlags = yield* RuntimeFlags.Service
 
     type Transport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
 
@@ -474,7 +480,30 @@ export const layer = Layer.effect(
       Effect.fn("MCP.state")(function* () {
         const cfg = yield* cfgSvc.get()
         const bridge = yield* EffectBridge.make()
-        const config = cfg.mcp ?? {}
+        const configured = cfg.mcp ?? {}
+
+        // Merge MCP servers discovered from Claude-Code-compatible sources
+        // (~/.claude/settings.json, ~/.zcode/settings.json, project .mcp.json).
+        // opencode.json entries take precedence: a discovered name already present
+        // in configured config is never overwritten.
+        let config = configured
+        if (!runtimeFlags.disableClaudeCodeMcp) {
+          const ctx = yield* InstanceState.context
+          const discovered = yield* discoverClaudeCodeMcpServers(
+            fsys,
+            global,
+            ctx.directory,
+            ctx.worktree,
+          ).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("Claude Code MCP discovery failed", { error }).pipe(Effect.as({})),
+            ),
+          )
+          const merged = { ...discovered }
+          for (const name of Object.keys(configured)) delete merged[name]
+          config = { ...merged, ...configured }
+        }
+
         const s: State = {
           config: {},
           status: {},
@@ -490,6 +519,9 @@ export const layer = Layer.effect(
                 yield* Effect.logError("Ignoring MCP config entry without type", { key })
                 return
               }
+
+              // Track the resolved config so status() reports discovered servers too.
+              s.config[key] = mcp
 
               if (mcp.enabled === false) {
                 s.status[key] = { status: "disabled" }
@@ -946,8 +978,18 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Config.defaultLayer),
   Layer.provide(CrossSpawnSpawner.defaultLayer),
   Layer.provide(FSUtil.defaultLayer),
+  Layer.provide(Global.layer),
+  Layer.provide(RuntimeFlags.defaultLayer),
 )
 
-export const node = LayerNode.make(layer, [CrossSpawnSpawner.node, McpAuth.node, EventV2Bridge.node, Config.node])
+export const node = LayerNode.make(layer, [
+  CrossSpawnSpawner.node,
+  McpAuth.node,
+  EventV2Bridge.node,
+  Config.node,
+  FSUtil.node,
+  Global.node,
+  RuntimeFlags.node,
+])
 
 export * as MCP from "."

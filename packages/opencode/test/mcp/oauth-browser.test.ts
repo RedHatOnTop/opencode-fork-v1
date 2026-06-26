@@ -120,6 +120,8 @@ const { Config } = await import("../../src/config/config")
 const { McpAuth } = await import("../../src/mcp/auth")
 const { McpOAuthCallback } = await import("../../src/mcp/oauth-callback")
 const { FSUtil } = await import("@opencode-ai/core/fs-util")
+const { Global } = await import("@opencode-ai/core/global")
+const { RuntimeFlags } = await import("../../src/effect/runtime-flags")
 const { CrossSpawnSpawner } = await import("@opencode-ai/core/cross-spawn-spawner")
 const mcpTest = testEffect(
   MCP.layer.pipe(
@@ -128,6 +130,8 @@ const mcpTest = testEffect(
     Layer.provide(Config.defaultLayer),
     Layer.provide(CrossSpawnSpawner.defaultLayer),
     Layer.provide(FSUtil.defaultLayer),
+    Layer.provide(Global.layer),
+    Layer.provide(RuntimeFlags.defaultLayer),
   ),
 )
 const service = MCP.Service as unknown as Effect.Effect<MCPNS.Interface, never, never>
