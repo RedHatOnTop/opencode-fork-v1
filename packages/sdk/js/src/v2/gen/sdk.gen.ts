@@ -145,6 +145,8 @@ import type {
   ProviderOauthAuthorizeResponses,
   ProviderOauthCallbackErrors,
   ProviderOauthCallbackResponses,
+  ProviderRefreshModelsErrors,
+  ProviderRefreshModelsResponses,
   PtyConnectErrors,
   PtyConnectResponses,
   PtyConnectTokenErrors,
@@ -3286,6 +3288,42 @@ export class Provider extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<ProviderAuthResponses, ProviderAuthErrors, ThrowOnError>({
       url: "/provider/auth",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Refresh provider models
+   *
+   * Force-fetch the live model list from the provider's OpenAI-compatible /models endpoint and merge any newly discovered models.
+   */
+  public refreshModels<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ProviderRefreshModelsResponses,
+      ProviderRefreshModelsErrors,
+      ThrowOnError
+    >({
+      url: "/provider/{providerID}/refresh-models",
       ...options,
       ...params,
     })

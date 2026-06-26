@@ -81,6 +81,18 @@ export const ProviderApi = HttpApi.make("provider")
             description: "Handle the OAuth callback from a provider after user authorization.",
           }),
         ),
+        HttpApiEndpoint.post("refreshModels", `${root}/:providerID/refresh-models`, {
+          params: { providerID: ProviderV2.ID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Boolean, "Models refreshed successfully"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "provider.refreshModels",
+            summary: "Refresh provider models",
+            description:
+              "Force-fetch the live model list from the provider's OpenAI-compatible /models endpoint and merge any newly discovered models.",
+          }),
+        ),
       )
       .annotateMerge(
         OpenApi.annotations({

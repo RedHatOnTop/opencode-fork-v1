@@ -98,6 +98,95 @@ function googleVertexAnthropicBaseURL(project: string | undefined, location: str
   return `https://aiplatform.${location}.rep.googleapis.com/v1/projects/${project}/locations/${location}/publishers/anthropic/models`
 }
 
+function joinURL(base: string, suffix: string) {
+  return `${base.replace(/\/+$/, "")}/${suffix.replace(/^\/+/, "")}`
+}
+
+// Fetch the live model list from an OpenAI-compatible endpoint. The configured base
+// URL may or may not already end in /v1, so both {base}/models and {base}/v1/models
+// are tried. Returns the first candidate that yields a parseable OpenAI-style list.
+export async function discoverOpenAICompatibleModels(
+  baseURL: string,
+  apiKey: string,
+  providerID: ProviderV2.ID,
+): Promise<Record<string, Model>> {
+  const candidates = Array.from(new Set([joinURL(baseURL, "models"), joinURL(baseURL, "v1/models")]))
+  for (const url of candidates) {
+    let response: Response
+    try {
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(15_000),
+      })
+    } catch {
+      continue
+    }
+    if (!response.ok) continue
+
+    const json = await response.json().catch(() => null)
+    const items = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : null
+    if (!items || items.length === 0) continue
+
+    const models: Record<string, Model> = {}
+    for (const item of items) {
+      const id = typeof item === "string" ? item : typeof item?.id === "string" ? item.id : undefined
+      if (!id) continue
+      models[id] = {
+        id: ModelV2.ID.make(id),
+        providerID,
+        name: id,
+        family: "",
+        api: { id, npm: "@ai-sdk/openai-compatible", url: baseURL },
+        status: "active",
+        headers: {},
+        options: {},
+        cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+        limit: { context: 0, output: 0 },
+        capabilities: {
+          temperature: false,
+          reasoning: false,
+          attachment: false,
+          toolcall: true,
+          input: { text: true, audio: false, image: false, video: false, pdf: false },
+          output: { text: true, audio: false, image: false, video: false, pdf: false },
+          interleaved: false,
+        },
+        release_date: "",
+        variants: {},
+      }
+    }
+    if (Object.keys(models).length > 0) return models
+  }
+  return {}
+}
+
+// Replace ${VAR} placeholders with environment values, leaving unknown ones intact.
+function substituteEnv(value: string, envs: Record<string, string | undefined>) {
+  return value.replace(/\$\{([^}]+)\}/g, (match, key) => envs[String(key)] ?? match)
+}
+
+// Resolve the API key a provider can authenticate model discovery with. provider.key is
+// only set by the env/auth paths during state build, so a custom provider declared purely
+// in opencode.json (options.apiKey or a Bearer header, with no env var and no /connect)
+// would otherwise be skipped. This mirrors the runtime key resolution in resolveSDK so a
+// correctly configured custom provider is discoverable without an extra auth step.
+export function resolveApiKey(
+  provider: Info | undefined,
+  configProvider: NonNullable<ConfigV1.Info["provider"]>[string] | undefined,
+  envs: Record<string, string | undefined>,
+): string | undefined {
+  const direct = provider?.key
+  if (direct) return direct
+
+  const optionKey = provider?.options?.apiKey ?? configProvider?.options?.apiKey
+  if (typeof optionKey === "string" && optionKey !== "") return substituteEnv(optionKey, envs)
+
+  const authHeader = provider?.options?.headers?.Authorization ?? configProvider?.options?.headers?.Authorization
+  if (typeof authHeader === "string" && authHeader !== "") {
+    return substituteEnv(authHeader.replace(/^Bearer\s+/i, ""), envs)
+  }
+}
+
 type BundledSDK = {
   languageModel(modelId: string): LanguageModelV3
   chat?: (modelId: string) => LanguageModelV3
@@ -1120,6 +1209,7 @@ export interface Interface {
   ) => Effect.Effect<{ providerID: ProviderV2.ID; modelID: string } | undefined>
   readonly getSmallModel: (providerID: ProviderV2.ID) => Effect.Effect<Model | undefined>
   readonly defaultModel: () => Effect.Effect<{ providerID: ProviderV2.ID; modelID: ModelV2.ID }, DefaultModelError>
+  readonly refreshModels: (providerID: ProviderV2.ID) => Effect.Effect<void>
 }
 
 interface State {
@@ -1543,18 +1633,73 @@ export const layer = Layer.effect(
           mergeProvider(providerID, partial)
         }
 
-        const gitlab = ProviderV2.ID.make("gitlab")
-        if (discoveryLoaders[gitlab] && providers[gitlab] && isProviderAllowed(gitlab)) {
-          yield* Effect.promise(async () => {
-            try {
-              const discovered = await discoveryLoaders[gitlab]()
+        // Provider-specific discovery loaders (e.g. gitlab workflow models, plugins).
+        for (const [id, discover] of Object.entries(discoveryLoaders)) {
+          const providerID = ProviderV2.ID.make(id)
+          const provider = providers[providerID]
+          if (!provider || !isProviderAllowed(providerID)) continue
+          yield* Effect.tryPromise({
+            try: async () => {
+              const discovered = await discover()
               for (const [modelID, model] of Object.entries(discovered)) {
-                if (!providers[gitlab].models[modelID]) {
-                  providers[gitlab].models[modelID] = model
-                }
+                if (!provider.models[modelID]) provider.models[modelID] = model
               }
-            } catch (e) {}
-          })
+            },
+            catch: (error) => String(error),
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("provider model discovery failed", { provider: id, error }),
+            ),
+          )
+        }
+
+        // Generic OpenAI-compatible discovery: for connected providers whose model
+        // list is empty (custom providers configured in opencode.json) or that target
+        // a custom endpoint, fetch the live model list from GET {baseURL}/models.
+        for (const [id, provider] of Object.entries(providers)) {
+          const providerID = ProviderV2.ID.make(id)
+          if (!isProviderAllowed(providerID)) continue
+          if (discoveryLoaders[providerID]) continue
+
+          const configProvider = cfg.provider?.[id]
+          // resolveApiKey falls back to options.apiKey / Bearer header so a custom
+          // provider declared purely in opencode.json is discoverable without /connect.
+          const apiKey = resolveApiKey(provider, configProvider, envs)
+          if (!apiKey) continue
+
+          let baseURL =
+            (typeof provider.options.baseURL === "string" && provider.options.baseURL) ||
+            (typeof configProvider?.options?.baseURL === "string" && configProvider.options.baseURL) ||
+            (typeof configProvider?.api === "string" && configProvider.api) ||
+            Object.values(provider.models).find((m) => typeof m.api.url === "string" && m.api.url)?.api.url
+          if (!baseURL) continue
+          baseURL = baseURL.replace(/\$\{([^}]+)\}/g, (match, key) => envs[String(key)] ?? match)
+
+          // Only OpenAI-compatible endpoints answer GET /models in the OpenAI shape.
+          const npm =
+            Object.values(provider.models).find((m) => typeof m.api.npm === "string")?.api.npm ??
+            configProvider?.npm ??
+            "@ai-sdk/openai-compatible"
+          if (!npm.includes("openai")) continue
+
+          // Skip providers already populated from the catalog unless they use a custom endpoint.
+          const hasCustomEndpoint = typeof provider.options.baseURL === "string" && provider.options.baseURL !== ""
+          if (Object.keys(provider.models).length > 0 && !hasCustomEndpoint) continue
+
+          const endpoint = baseURL
+          yield* Effect.tryPromise({
+            try: async () => {
+              const discovered = await discoverOpenAICompatibleModels(endpoint, apiKey, providerID)
+              for (const [modelID, model] of Object.entries(discovered)) {
+                if (!provider.models[modelID]) provider.models[modelID] = model
+              }
+            },
+            catch: (error) => String(error),
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("provider model discovery failed", { provider: id, url: endpoint, error }),
+            ),
+          )
         }
 
         for (const [id, provider] of Object.entries(providers)) {
@@ -1618,6 +1763,43 @@ export const layer = Layer.effect(
     )
 
     const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
+
+    const refreshModels = Effect.fn("Provider.refreshModels")(function* (providerID: ProviderV2.ID) {
+      const cfg = yield* config.get()
+      const envs = yield* env.all()
+
+      const provider = yield* InstanceState.useEffect(state, (s) => Effect.succeed(s.providers[providerID]))
+      if (!provider) return
+
+      const configProvider = cfg.provider?.[providerID]
+      // Stored auth wins; fall back to options.apiKey / Bearer header so manual refresh
+      // works for custom providers declared purely in opencode.json.
+      const stored = yield* auth.get(providerID).pipe(Effect.orDie)
+      const storedKey = stored?.type === "oauth" ? stored.access : stored?.type === "api" ? stored.key : undefined
+      const apiKey = storedKey ?? resolveApiKey(provider, configProvider, envs)
+
+      const baseURL =
+        (typeof provider.options.baseURL === "string" && provider.options.baseURL) ||
+        (typeof configProvider?.options?.baseURL === "string" && configProvider.options.baseURL) ||
+        (typeof configProvider?.api === "string" && configProvider.api) ||
+        Object.values(provider.models).find((m) => typeof m.api.url === "string" && m.api.url)?.api.url
+      if (!baseURL || !apiKey) return
+
+      const endpoint = baseURL.replace(/\$\{([^}]+)\}/g, (match, key) => envs[String(key)] ?? match)
+      yield* Effect.tryPromise({
+        try: async () => {
+          const discovered = await discoverOpenAICompatibleModels(endpoint, apiKey, providerID)
+          for (const [modelID, model] of Object.entries(discovered)) {
+            if (!provider.models[modelID]) provider.models[modelID] = model
+          }
+        },
+        catch: (error) => String(error),
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("provider model refresh failed", { provider: providerID, url: endpoint, error }),
+        ),
+      )
+    })
 
     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
       try {
@@ -1928,7 +2110,7 @@ export const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel })
+    return Service.of({ list, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel, refreshModels })
   }),
 )
 

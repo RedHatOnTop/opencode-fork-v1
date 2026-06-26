@@ -5,6 +5,7 @@ import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
 import { useSDK } from "../context/sdk"
 import { DialogPrompt } from "../ui/dialog-prompt"
+import { DialogConfirm } from "../ui/dialog-confirm"
 import { Link } from "../ui/link"
 import { useTheme } from "../context/theme"
 import { TextAttributes } from "@opentui/core"
@@ -83,6 +84,87 @@ export function normalizeCustomProviderID(value: string) {
   return providerID
 }
 
+type ConnectDeps = {
+  dialog: ReturnType<typeof useDialog>
+  sdk: ReturnType<typeof useSDK>
+  sync: ReturnType<typeof useSync>
+  toast: ReturnType<typeof useToast>
+}
+
+async function connectProvider(deps: ConnectDeps, providerID: string) {
+  const { dialog, sdk, sync, toast } = deps
+  const methods = sync.data.provider_auth[providerID] ?? [
+    {
+      type: "api",
+      label: "API key",
+    },
+  ]
+  let index: number | null = 0
+  if (methods.length > 1) {
+    index = await new Promise<number | null>((resolve) => {
+      dialog.replace(
+        () => (
+          <DialogSelect
+            title="Select auth method"
+            options={methods.map((x, index) => ({
+              title: x.label,
+              value: index,
+            }))}
+            onSelect={(option) => resolve(option.value)}
+          />
+        ),
+        () => resolve(null),
+      )
+    })
+  }
+  if (index == null) return
+  const method = methods[index]
+  if (method.type === "oauth") {
+    let inputs: Record<string, string> | undefined
+    if (method.prompts?.length) {
+      const value = await PromptsMethod({
+        dialog,
+        prompts: method.prompts,
+      })
+      if (!value) return
+      inputs = value
+    }
+
+    const result = await sdk.client.provider.oauth.authorize({
+      providerID,
+      method: index,
+      inputs,
+    })
+    if (result.error) {
+      toast.show({
+        variant: "error",
+        message: JSON.stringify(result.error),
+      })
+      dialog.clear()
+      return
+    }
+    if (result.data?.method === "code") {
+      dialog.replace(() => (
+        <CodeMethod providerID={providerID} title={method.label} index={index} authorization={result.data!} />
+      ))
+    }
+    if (result.data?.method === "auto") {
+      dialog.replace(() => (
+        <AutoMethod providerID={providerID} title={method.label} index={index} authorization={result.data!} />
+      ))
+    }
+  }
+  if (method.type === "api") {
+    let metadata: Record<string, string> | undefined
+    if (method.prompts?.length) {
+      const value = await PromptsMethod({ dialog, prompts: method.prompts })
+      if (!value) return
+      metadata = value
+    }
+    return dialog.replace(() => <ApiMethod providerID={providerID} title={method.label} metadata={metadata} />)
+  }
+}
+
 export function createDialogProviderOptions() {
   const sync = useSync()
   const dialog = useDialog()
@@ -144,79 +226,7 @@ export function createDialogProviderOptions() {
           gutter: connected && onboarded() ? () => <text fg={theme.success}>✓</text> : undefined,
           async onSelect() {
             if (consoleManaged) return
-
-            const methods = sync.data.provider_auth[providerID] ?? [
-              {
-                type: "api",
-                label: "API key",
-              },
-            ]
-            let index: number | null = 0
-            if (methods.length > 1) {
-              index = await new Promise<number | null>((resolve) => {
-                dialog.replace(
-                  () => (
-                    <DialogSelect
-                      title="Select auth method"
-                      options={methods.map((x, index) => ({
-                        title: x.label,
-                        value: index,
-                      }))}
-                      onSelect={(option) => resolve(option.value)}
-                    />
-                  ),
-                  () => resolve(null),
-                )
-              })
-            }
-            if (index == null) return
-            const method = methods[index]
-            if (method.type === "oauth") {
-              let inputs: Record<string, string> | undefined
-              if (method.prompts?.length) {
-                const value = await PromptsMethod({
-                  dialog,
-                  prompts: method.prompts,
-                })
-                if (!value) return
-                inputs = value
-              }
-
-              const result = await sdk.client.provider.oauth.authorize({
-                providerID,
-                method: index,
-                inputs,
-              })
-              if (result.error) {
-                toast.show({
-                  variant: "error",
-                  message: JSON.stringify(result.error),
-                })
-                dialog.clear()
-                return
-              }
-              if (result.data?.method === "code") {
-                dialog.replace(() => (
-                  <CodeMethod providerID={providerID} title={method.label} index={index} authorization={result.data!} />
-                ))
-              }
-              if (result.data?.method === "auto") {
-                dialog.replace(() => (
-                  <AutoMethod providerID={providerID} title={method.label} index={index} authorization={result.data!} />
-                ))
-              }
-            }
-            if (method.type === "api") {
-              let metadata: Record<string, string> | undefined
-              if (method.prompts?.length) {
-                const value = await PromptsMethod({ dialog, prompts: method.prompts })
-                if (!value) return
-                metadata = value
-              }
-              return dialog.replace(() => (
-                <ApiMethod providerID={providerID} title={method.label} metadata={metadata} />
-              ))
-            }
+            await connectProvider({ dialog, sdk, sync, toast }, providerID)
           },
         }
       }),
@@ -226,8 +236,119 @@ export function createDialogProviderOptions() {
 }
 
 export function DialogProvider() {
-  const options = createDialogProviderOptions()
-  return <DialogSelect title="Connect a provider" options={options()} />
+  const sync = useSync()
+  const dialog = useDialog()
+  const { theme } = useTheme()
+  const available = createDialogProviderOptions()
+
+  const options = createMemo(() => {
+    const connectedIDs = new Set(sync.data.provider_next.connected)
+    const connectedOptions = pipe(
+      sync.data.provider_next.connected,
+      sortBy(
+        (id) => PROVIDER_PRIORITY[id] ?? 99,
+        (id) => sync.data.provider_next.all.find((p) => p.id === id)?.name?.toLowerCase() ?? id,
+        (id) => id,
+      ),
+      map((providerID) => {
+        const info = sync.data.provider_next.all.find((p) => p.id === providerID)
+        return {
+          title: info?.name ?? providerID,
+          value: providerID,
+          category: "Connected",
+          gutter: () => <text fg={theme.success}>✓</text>,
+          onSelect() {
+            dialog.replace(() => <DialogProviderManage providerID={providerID} />)
+          },
+        }
+      }),
+    )
+    const availableOptions = available().filter(
+      (option) => !(typeof option.value === "string" && connectedIDs.has(option.value)),
+    )
+    return [...connectedOptions, ...availableOptions]
+  })
+
+  return <DialogSelect title="Providers" options={options()} />
+}
+
+export function DialogProviderManage(props: { providerID: string }) {
+  const dialog = useDialog()
+  const sdk = useSDK()
+  const sync = useSync()
+  const toast = useToast()
+
+  const info = createMemo(() => sync.data.provider_next.all.find((p) => p.id === props.providerID))
+  const name = () => info()?.name ?? props.providerID
+  const consoleManaged = isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, props.providerID)
+
+  async function disconnect() {
+    const confirm = await DialogConfirm.show(
+      dialog,
+      "Disconnect provider",
+      `Remove stored credentials for ${name()}? You can reconnect anytime from /connect.`,
+      "disconnect",
+    )
+    if (!confirm) return
+    const result = await sdk.client.auth.remove({ providerID: props.providerID })
+    if (result.error) {
+      toast.show({ variant: "error", message: "Failed to disconnect provider" })
+      return
+    }
+    await sdk.client.instance.dispose()
+    await sync.bootstrap()
+    toast.show({ variant: "info", message: `Disconnected ${name()}` })
+    dialog.replace(() => <DialogProvider />)
+  }
+
+  async function refreshModels() {
+    toast.show({ variant: "info", message: `Refreshing models for ${name()}...` })
+    const result = await sdk.client.provider.refreshModels({ providerID: props.providerID })
+    if (result.error) {
+      toast.show({ variant: "error", message: "Failed to refresh models" })
+      return
+    }
+    await sync.bootstrap()
+    toast.show({ variant: "success", message: `Models refreshed for ${name()}` })
+    dialog.replace(() => <DialogModel providerID={props.providerID} />)
+  }
+
+  const options = [
+    {
+      title: "Models",
+      value: "models",
+      category: "Manage",
+      description: "Browse and select models",
+      onSelect: () => dialog.replace(() => <DialogModel providerID={props.providerID} />),
+    },
+    {
+      title: "Refresh models",
+      value: "refresh",
+      category: "Manage",
+      description: "Fetch latest model list from provider",
+      onSelect: refreshModels,
+    },
+    {
+      title: "Reconnect",
+      value: "reconnect",
+      category: "Manage",
+      description: "Update credentials",
+      onSelect: () => connectProvider({ dialog, sdk, sync, toast }, props.providerID),
+    },
+    ...(!consoleManaged
+      ? [
+          {
+            title: "Disconnect",
+            value: "disconnect",
+            category: "Manage",
+            description: "Remove stored credentials",
+            onSelect: disconnect,
+          },
+        ]
+      : []),
+  ]
+
+  return <DialogSelect title={name()} options={options} skipFilter />
 }
 
 interface AutoMethodProps {

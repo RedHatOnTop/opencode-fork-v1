@@ -7473,6 +7473,36 @@ export type ProviderOauthCallbackResponses = {
 
 export type ProviderOauthCallbackResponse = ProviderOauthCallbackResponses[keyof ProviderOauthCallbackResponses]
 
+export type ProviderRefreshModelsData = {
+  body?: never
+  path: {
+    providerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/provider/{providerID}/refresh-models"
+}
+
+export type ProviderRefreshModelsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ProviderRefreshModelsError = ProviderRefreshModelsErrors[keyof ProviderRefreshModelsErrors]
+
+export type ProviderRefreshModelsResponses = {
+  /**
+   * Models refreshed successfully
+   */
+  200: boolean
+}
+
+export type ProviderRefreshModelsResponse = ProviderRefreshModelsResponses[keyof ProviderRefreshModelsResponses]
+
 export type SessionListData = {
   body?: never
   path?: never
