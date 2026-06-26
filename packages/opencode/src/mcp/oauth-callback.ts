@@ -1,18 +1,7 @@
 import { createConnection } from "net"
 import { createServer } from "http"
-import * as Log from "@opencode-ai/core/util/log"
+import { escapeHtml } from "@/util/html"
 import { OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH, parseRedirectUri } from "./oauth-provider"
-
-const log = Log.create({ service: "mcp.oauth-callback" })
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"')
-    .replace(/'/g, '&#x27;')
-}
 
 // Current callback server configuration (may differ from defaults if custom redirectUri is used)
 let currentPort = OAUTH_CALLBACK_PORT
@@ -82,6 +71,13 @@ function cleanupStateIndex(oauthState: string) {
   }
 }
 
+function stopIfIdle() {
+  if (pendingAuths.size > 0 || !server) return
+
+  server.close()
+  server = undefined
+}
+
 function handleRequest(req: import("http").IncomingMessage, res: import("http").ServerResponse) {
   const url = new URL(req.url || "/", `http://localhost:${currentPort}`)
 
@@ -96,13 +92,10 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
   const error = url.searchParams.get("error")
   const errorDescription = url.searchParams.get("error_description")
 
-  log.info("received oauth callback", { hasCode: !!code, state, error })
-
   // Enforce state parameter presence
   if (!state) {
     const errorMsg = "Missing required state parameter - potential CSRF attack"
-    log.error("oauth callback missing state parameter", { url: url.toString() })
-    res.writeHead(400, { "Content-Type": "text/html" })
+    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
     res.end(HTML_ERROR(errorMsg))
     return
   }
@@ -116,13 +109,14 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
       cleanupStateIndex(state)
       pending.reject(new Error(errorMsg))
     }
-    res.writeHead(200, { "Content-Type": "text/html" })
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(HTML_ERROR(errorMsg))
+    stopIfIdle()
     return
   }
 
   if (!code) {
-    res.writeHead(400, { "Content-Type": "text/html" })
+    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
     res.end(HTML_ERROR("No authorization code provided"))
     return
   }
@@ -130,8 +124,7 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
   // Validate state parameter
   if (!pendingAuths.has(state)) {
     const errorMsg = "Invalid or expired state parameter - potential CSRF attack"
-    log.error("oauth callback with invalid state", { state, pendingStates: Array.from(pendingAuths.keys()) })
-    res.writeHead(400, { "Content-Type": "text/html" })
+    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
     res.end(HTML_ERROR(errorMsg))
     return
   }
@@ -143,8 +136,9 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
   cleanupStateIndex(state)
   pending.resolve(code)
 
-  res.writeHead(200, { "Content-Type": "text/html" })
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
   res.end(HTML_SUCCESS)
+  stopIfIdle()
 }
 
 export async function ensureRunning(redirectUri?: string): Promise<void> {
@@ -153,7 +147,6 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
 
   // If server is running on a different port/path, stop it first
   if (server && (currentPort !== port || currentPath !== path)) {
-    log.info("stopping oauth callback server to reconfigure", { oldPort: currentPort, newPort: port })
     await stop()
   }
 
@@ -161,7 +154,6 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
 
   const running = await isPortInUse(port)
   if (running) {
-    log.info("oauth callback server already running on another instance", { port })
     return
   }
 
@@ -171,7 +163,6 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
   server = createServer(handleRequest)
   await new Promise<void>((resolve, reject) => {
     server!.listen(currentPort, () => {
-      log.info("oauth callback server started", { port: currentPort, path: currentPath })
       resolve()
     })
     server!.on("error", reject)
@@ -186,6 +177,7 @@ export function waitForCallback(oauthState: string, mcpName?: string): Promise<s
         pendingAuths.delete(oauthState)
         if (mcpName) mcpNameToState.delete(mcpName)
         reject(new Error("OAuth callback timeout - authorization took too long"))
+        stopIfIdle()
       }
     }, CALLBACK_TIMEOUT_MS)
 
@@ -203,6 +195,7 @@ export function cancelPending(mcpName: string): void {
     pendingAuths.delete(key)
     mcpNameToState.delete(mcpName)
     pending.reject(new Error("Authorization cancelled"))
+    stopIfIdle()
   }
 }
 
@@ -223,7 +216,6 @@ export async function stop(): Promise<void> {
   if (server) {
     await new Promise<void>((resolve) => server!.close(() => resolve()))
     server = undefined
-    log.info("oauth callback server stopped")
   }
 
   for (const [_name, pending] of pendingAuths) {

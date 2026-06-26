@@ -75,7 +75,7 @@ export const dict = {
   "error.roleRequired": "역할이 필요합니다",
   "error.idRequired": "ID가 필요합니다",
   "error.nameRequired": "이름이 필요합니다",
-  "error.providerRequired": "프로바이더가 필요합니다",
+  "error.providerRequired": "제공자가 필요합니다",
   "error.apiKeyRequired": "API 키가 필요합니다",
   "error.modelRequired": "모델이 필요합니다",
   "error.reloadAmountMin": "충전 금액은 최소 ${{amount}}이어야 합니다",
@@ -95,7 +95,7 @@ export const dict = {
   "temp.feature.zen.link": "엄선된 모델 목록",
   "temp.feature.zen.afterLink": "",
   "temp.feature.models.beforeLink": "로컬 모델을 포함하여",
-  "temp.feature.models.afterLink": "를 통해 75개 이상의 LLM 프로바이더 지원",
+  "temp.feature.models.afterLink": "를 통해 75개 이상의 LLM 제공자 지원",
   "temp.screenshot.caption": "tokyonight 테마가 적용된 OpenCode TUI",
   "temp.screenshot.alt": "tokyonight 테마가 적용된 OpenCode TUI",
   "temp.logoLightAlt": "opencode 밝은 로고",
@@ -108,7 +108,7 @@ export const dict = {
   "home.banner.downloadBetaNow": "데스크톱 베타 다운로드",
 
   "home.hero.title": "오픈 소스 AI 코딩 에이전트",
-  "home.hero.subtitle.a": "무료 모델이 포함되어 있으며, 어떤 프로바이더의 모델이든 연결 가능합니다.",
+  "home.hero.subtitle.a": "무료 모델이 포함되어 있으며, 어떤 제공자의 모델이든 연결 가능합니다.",
   "home.hero.subtitle.b": "Claude, GPT, Gemini 등을 포함합니다.",
 
   "home.install.ariaLabel": "설치 옵션",
@@ -127,7 +127,7 @@ export const dict = {
   "home.what.chatgptPlus.title": "ChatGPT Plus/Pro",
   "home.what.chatgptPlus.body": "OpenAI로 로그인하여 ChatGPT Plus 또는 Pro 계정을 사용하세요",
   "home.what.anyModel.title": "모든 모델",
-  "home.what.anyModel.body": "Models.dev를 통해 로컬 모델 포함 75개 이상의 LLM 프로바이더 지원",
+  "home.what.anyModel.body": "Models.dev를 통해 로컬 모델 포함 75개 이상의 LLM 제공자 지원",
   "home.what.anyEditor.title": "모든 에디터",
   "home.what.anyEditor.body": "터미널 인터페이스, 데스크톱 앱, IDE 확장 프로그램으로 사용 가능",
   "home.what.readDocs": "문서 읽기",
@@ -155,12 +155,12 @@ export const dict = {
   "home.faq.a3.p1": "꼭 그렇지는 않습니다. OpenCode에는 계정 없이도 사용할 수 있는 무료 모델 세트가 포함되어 있습니다.",
   "home.faq.a3.p2.beforeZen": "이 외에도,",
   "home.faq.a3.p2.afterZen": " 계정을 생성하여 인기 있는 코딩 모델들을 사용할 수 있습니다.",
-  "home.faq.a3.p3": "Zen 사용을 권장하지만, OpenCode는 OpenAI, Anthropic, xAI 등 모든 인기 프로바이더와도 작동합니다.",
+  "home.faq.a3.p3": "Zen 사용을 권장하지만, OpenCode는 OpenAI, Anthropic, xAI 등 모든 인기 제공자와도 작동합니다.",
   "home.faq.a3.p4.beforeLocal": "또한",
   "home.faq.a3.p4.localLink": "로컬 모델",
   "home.faq.q4": "기존 AI 구독을 OpenCode에서 사용할 수 있나요?",
   "home.faq.a4.p1":
-    "네, OpenCode는 모든 주요 프로바이더의 구독 플랜을 지원합니다. Claude Pro/Max, ChatGPT Plus/Pro, 또는 GitHub Copilot 구독을 사용할 수 있습니다.",
+    "네, OpenCode는 모든 주요 제공자의 구독 플랜을 지원합니다. Claude Pro/Max, ChatGPT Plus/Pro, 또는 GitHub Copilot 구독을 사용할 수 있습니다.",
   "home.faq.q5": "OpenCode는 터미널에서만 사용할 수 있나요?",
   "home.faq.a5.beforeDesktop": "이제 아닙니다! OpenCode는 이제",
   "home.faq.a5.desktop": "데스크톱",
@@ -168,7 +168,7 @@ export const dict = {
   "home.faq.a5.web": "웹",
   "home.faq.q6": "OpenCode 비용은 얼마인가요?",
   "home.faq.a6":
-    "OpenCode는 100% 무료로 사용할 수 있습니다. 무료 모델 세트도 포함되어 있습니다. 다른 프로바이더를 연결할 경우 추가 비용이 발생할 수 있습니다.",
+    "OpenCode는 100% 무료로 사용할 수 있습니다. 무료 모델 세트도 포함되어 있습니다. 다른 제공자를 연결할 경우 추가 비용이 발생할 수 있습니다.",
   "home.faq.q7": "데이터와 프라이버시는 어떤가요?",
   "home.faq.a7.p1": "데이터와 정보는 무료 모델을 사용하거나 공유 링크를 생성할 때만 저장됩니다.",
   "home.faq.a7.p2.beforeModels": "더 알아보기:",
@@ -184,7 +184,7 @@ export const dict = {
 
   "home.zenCta.title": "코딩 에이전트를 위한 신뢰할 수 있고 최적화된 모델",
   "home.zenCta.body":
-    "Zen은 OpenCode가 코딩 에이전트를 위해 특별히 테스트하고 벤치마킹한 엄선된 AI 모델 세트에 대한 액세스를 제공합니다. 프로바이더 간의 일관되지 않은 성능과 품질에 대해 걱정할 필요 없이, 검증된 모델을 사용하세요.",
+    "Zen은 OpenCode가 코딩 에이전트를 위해 특별히 테스트하고 벤치마킹한 엄선된 AI 모델 세트에 대한 액세스를 제공합니다. 제공자 간의 일관되지 않은 성능과 품질에 대해 걱정할 필요 없이, 검증된 모델을 사용하세요.",
   "home.zenCta.link": "Zen 알아보기",
 
   "zen.title": "OpenCode Zen | 코딩 에이전트를 위한 신뢰할 수 있고 최적화된 모델 세트",
@@ -199,17 +199,17 @@ export const dict = {
     "Zen은 코딩 에이전트를 위해 특별히 테스트되고 벤치마킹된 모델만 제공합니다. 스테이크를 버터 나이프로 자르지 않듯이, 코딩에 품질이 낮은 모델을 사용하지 마세요.",
   "zen.faq.q3": "Zen이 더 저렴한가요?",
   "zen.faq.a3":
-    "Zen은 영리를 목적으로 하지 않습니다. Zen은 모델 프로바이더의 비용을 사용자에게 그대로 전달합니다. Zen 사용량이 늘어날수록 OpenCode는 더 좋은 요율을 협상하여 그 혜택을 사용자에게 돌려드릴 수 있습니다.",
+    "Zen은 영리를 목적으로 하지 않습니다. Zen은 모델 제공자의 비용을 사용자에게 그대로 전달합니다. Zen 사용량이 늘어날수록 OpenCode는 더 좋은 요율을 협상하여 그 혜택을 사용자에게 돌려드릴 수 있습니다.",
   "zen.faq.q4": "Zen 비용은 얼마인가요?",
   "zen.faq.a4.p1.beforePricing": "Zen은",
   "zen.faq.a4.p1.pricingLink": "요청당 비용을 청구하며",
-  "zen.faq.a4.p1.afterPricing": ", 마크업이 0이므로 모델 프로바이더가 청구하는 금액 그대로 지불하게 됩니다.",
+  "zen.faq.a4.p1.afterPricing": ", 마크업이 0이므로 모델 제공자가 청구하는 금액 그대로 지불하게 됩니다.",
   "zen.faq.a4.p2.beforeAccount": "총 비용은 사용량에 따라 달라지며, 월간 지출 한도를",
   "zen.faq.a4.p2.accountLink": "계정",
   "zen.faq.a4.p3": "비용을 충당하기 위해 OpenCode는 $20 잔액 충전 시 $1.23의 소액 결제 처리 수수료만 추가합니다.",
   "zen.faq.q5": "데이터와 프라이버시는 어떤가요?",
   "zen.faq.a5.beforeExceptions":
-    "모든 Zen 모델은 미국에서 호스팅됩니다. 프로바이더들은 데이터 보존 금지(zero-retention) 정책을 따르며, 모델 학습에 귀하의 데이터를 사용하지 않습니다. 단,",
+    "모든 Zen 모델은 미국에서 호스팅됩니다. 제공자들은 데이터 보존 금지(zero-retention) 정책을 따르며, 모델 학습에 귀하의 데이터를 사용하지 않습니다. 단,",
   "zen.faq.a5.exceptionsLink": "다음 예외",
   "zen.faq.q6": "지출 한도를 설정할 수 있나요?",
   "zen.faq.a6": "네, 계정에서 월간 지출 한도를 설정할 수 있습니다.",
@@ -225,11 +225,11 @@ export const dict = {
   "zen.pricing.body": "모든 에이전트와 함께 사용하세요. 월간 지출 한도 설정 가능. 언제든지 취소 가능.",
   "zen.problem.title": "Zen은 어떤 문제를 해결하나요?",
   "zen.problem.body":
-    "사용 가능한 모델은 매우 많지만, 코딩 에이전트와 잘 작동하는 모델은 소수에 불과합니다. 대부분의 프로바이더들은 모델을 다르게 구성하여 결과가 제각각입니다.",
+    "사용 가능한 모델은 매우 많지만, 코딩 에이전트와 잘 작동하는 모델은 소수에 불과합니다. 대부분의 제공자들은 모델을 다르게 구성하여 결과가 제각각입니다.",
   "zen.problem.subtitle": "우리는 OpenCode 사용자뿐만 아니라 모든 분들을 위해 이 문제를 해결하고 있습니다.",
   "zen.problem.item1": "선별된 모델 테스트 및 팀 자문",
-  "zen.problem.item2": "프로바이더와 협력하여 올바른 모델 전달 보장",
-  "zen.problem.item3": "권장하는 모든 모델-프로바이더 조합 벤치마킹",
+  "zen.problem.item2": "제공자와 협력하여 올바른 모델 전달 보장",
+  "zen.problem.item3": "권장하는 모든 모델-제공자 조합 벤치마킹",
   "zen.how.title": "Zen 작동 방식",
   "zen.how.body": "OpenCode와 함께 사용하는 것을 권장하지만, Zen은 어떤 에이전트와도 사용할 수 있습니다.",
   "zen.how.step1.title": "가입 및 $20 잔액 추가",
@@ -242,12 +242,13 @@ export const dict = {
   "zen.how.step3.body": "잔액이 $5에 도달하면 자동으로 $20가 충전됩니다",
   "zen.privacy.title": "귀하의 프라이버시는 우리에게 중요합니다",
   "zen.privacy.beforeExceptions":
-    "모든 Zen 모델은 미국에서 호스팅됩니다. 프로바이더들은 데이터 보존 금지 정책을 따르며 모델 학습에 데이터를 사용하지 않습니다. 단,",
+    "모든 Zen 모델은 미국에서 호스팅됩니다. 제공자들은 데이터 보존 금지 정책을 따르며 모델 학습에 데이터를 사용하지 않습니다. 단,",
   "zen.privacy.exceptionsLink": "다음 예외",
 
   "go.title": "OpenCode Go | 모두를 위한 저비용 코딩 모델",
+  "go.banner.text": "MiniMax M3 사용 한도가 한시적으로 3배 확대됩니다",
   "go.meta.description":
-    "Go는 첫 달 $5, 이후 $10/월로 시작하며, GLM-5.1, GLM-5, Kimi K2.5, Kimi K2.6, MiMo-V2.5-Pro, MiMo-V2.5, Qwen3.7 Max, Qwen3.6 Plus, Qwen3.5 Plus, MiniMax M2.5, MiniMax M2.7, DeepSeek V4 Pro, DeepSeek V4 Flash에 대해 넉넉한 5시간 요청 한도를 제공합니다.",
+    "Go는 첫 달 $5, 이후 $10/월로 시작하며, GLM-5.1, GLM-5, Kimi K2.7 Code, Kimi K2.6, MiMo-V2.5-Pro, MiMo-V2.5, Qwen3.7 Max, Qwen3.7 Plus, Qwen3.6 Plus, MiniMax M2.7, MiniMax M3, DeepSeek V4 Pro, DeepSeek V4 Flash에 대해 넉넉한 5시간 요청 한도를 제공합니다.",
   "go.hero.title": "모두를 위한 저비용 코딩 모델",
   "go.hero.body":
     "Go는 전 세계 프로그래머들에게 에이전트 코딩을 제공합니다. 가장 유능한 오픈 소스 모델에 대한 넉넉한 한도와 안정적인 액세스를 제공하므로, 비용이나 가용성 걱정 없이 강력한 에이전트로 빌드할 수 있습니다.",
@@ -297,7 +298,7 @@ export const dict = {
   "go.problem.item2": "넉넉한 한도와 안정적인 액세스",
   "go.problem.item3": "가능한 한 많은 프로그래머를 위해 제작됨",
   "go.problem.item4":
-    "GLM-5.1, GLM-5, Kimi K2.5, Kimi K2.6, MiMo-V2.5-Pro, MiMo-V2.5, Qwen3.7 Max, Qwen3.6 Plus, Qwen3.5 Plus, MiniMax M2.5, MiniMax M2.7, DeepSeek V4 Pro, DeepSeek V4 Flash 포함",
+    "GLM-5.1, GLM-5, Kimi K2.7 Code, Kimi K2.6, MiMo-V2.5-Pro, MiMo-V2.5, Qwen3.7 Max, Qwen3.7 Plus, Qwen3.6 Plus, MiniMax M2.7, MiniMax M3, DeepSeek V4 Pro, DeepSeek V4 Flash 포함",
   "go.how.title": "Go 작동 방식",
   "go.how.body": "Go는 첫 달 $5, 이후 $10/월로 시작합니다. OpenCode 또는 어떤 에이전트와도 함께 사용할 수 있습니다.",
   "go.how.step1.title": "계정 생성",
@@ -313,7 +314,7 @@ export const dict = {
     "이 플랜은 주로 글로벌 사용자를 위해 설계되었으며, 안정적인 글로벌 액세스를 위해 미국, EU, 싱가포르에 모델이 호스팅되어 있습니다.",
   "go.privacy.contactAfter": "질문이 있으시면 언제든지 문의해 주세요.",
   "go.privacy.beforeExceptions":
-    "Go 모델은 미국에서 호스팅됩니다. 프로바이더들은 데이터 보존 금지 정책을 따르며 모델 학습에 데이터를 사용하지 않습니다. 단,",
+    "Go 모델은 미국에서 호스팅됩니다. 제공자들은 데이터 보존 금지 정책을 따르며 모델 학습에 데이터를 사용하지 않습니다. 단,",
   "go.privacy.exceptionsLink": "다음 예외",
   "go.faq.q1": "OpenCode Go란 무엇인가요?",
   "go.faq.a1": "Go는 에이전트 코딩을 위한 유능한 오픈 소스 모델에 대해 안정적인 액세스를 제공하는 저비용 구독입니다.",
@@ -321,7 +322,7 @@ export const dict = {
   "go.faq.a2": "Go에는 넉넉한 한도와 안정적인 액세스를 제공하는 아래 모델이 포함됩니다.",
   "go.faq.q3": "Go는 Zen과 같은가요?",
   "go.faq.a3":
-    "아니요. Zen은 종량제인 반면, Go는 첫 달 $5, 이후 $10/월로 시작하며, GLM-5.1, GLM-5, Kimi K2.5, Kimi K2.6, MiMo-V2.5-Pro, MiMo-V2.5, Qwen3.7 Max, Qwen3.6 Plus, Qwen3.5 Plus, MiniMax M2.5, MiniMax M2.7, DeepSeek V4 Pro, DeepSeek V4 Flash 오픈 소스 모델에 대한 넉넉한 한도와 안정적인 액세스를 제공합니다.",
+    "아니요. Zen은 종량제인 반면, Go는 첫 달 $5, 이후 $10/월로 시작하며, GLM-5.1, GLM-5, Kimi K2.7 Code, Kimi K2.6, MiMo-V2.5-Pro, MiMo-V2.5, Qwen3.7 Max, Qwen3.7 Plus, Qwen3.6 Plus, MiniMax M2.7, MiniMax M3, DeepSeek V4 Pro, DeepSeek V4 Flash 오픈 소스 모델에 대한 넉넉한 한도와 안정적인 액세스를 제공합니다.",
   "go.faq.q4": "Go 비용은 얼마인가요?",
   "go.faq.a4.p1.beforePricing": "Go 비용은",
   "go.faq.a4.p1.pricingLink": "첫 달 $5",
@@ -331,9 +332,9 @@ export const dict = {
   "go.faq.a4.p3": "언제든지 취소할 수 있습니다.",
   "go.faq.q5": "데이터와 프라이버시는 어떤가요?",
   "go.faq.a5.body":
-    "이 플랜은 주로 글로벌 사용자를 위해 설계되었으며, 안정적인 글로벌 액세스를 위해 미국, EU, 싱가포르에 모델이 호스팅되어 있습니다. 당사의 프로바이더들은 데이터 보존 금지 정책을 따르며 모델 학습에 데이터를 사용하지 않습니다.",
+    "이 플랜은 주로 글로벌 사용자를 위해 설계되었으며, 안정적인 글로벌 액세스를 위해 미국, EU, 싱가포르에 모델이 호스팅되어 있습니다. 당사의 제공자들은 데이터 보존 금지 정책을 따르며 모델 학습에 데이터를 사용하지 않습니다.",
   "go.faq.a5.beforeExceptions":
-    "Go 모델은 미국에서 호스팅됩니다. 프로바이더들은 데이터 보존 금지 정책을 따르며 모델 학습에 데이터를 사용하지 않습니다. 단,",
+    "Go 모델은 미국에서 호스팅됩니다. 제공자들은 데이터 보존 금지 정책을 따르며 모델 학습에 데이터를 사용하지 않습니다. 단,",
   "go.faq.a5.exceptionsLink": "다음 예외",
   "go.faq.q6": "크레딧을 충전할 수 있나요?",
   "go.faq.a6": "사용량이 더 필요한 경우 계정에서 크레딧을 충전할 수 있습니다.",
@@ -344,13 +345,13 @@ export const dict = {
 
   "go.faq.q9": "무료 모델과 Go의 차이점은 무엇인가요?",
   "go.faq.a9":
-    "무료 모델에는 Big Pickle과 당시 사용 가능한 프로모션 모델이 포함되며, 하루 200회 요청 할당량이 적용됩니다. Go는 GLM-5.1, GLM-5, Kimi K2.5, Kimi K2.6, MiMo-V2.5-Pro, MiMo-V2.5, Qwen3.7 Max, Qwen3.6 Plus, Qwen3.5 Plus, MiniMax M2.5, MiniMax M2.7, DeepSeek V4 Pro, DeepSeek V4 Flash를 포함하며, 롤링 윈도우(5시간, 주간, 월간)에 걸쳐 더 높은 요청 할당량을 적용합니다. 이는 대략 5시간당 $12, 주당 $30, 월 $60에 해당합니다(실제 요청 수는 모델 및 사용량에 따라 다름).",
+    "무료 모델에는 Big Pickle과 당시 사용 가능한 프로모션 모델이 포함되며, 하루 200회 요청 할당량이 적용됩니다. Go는 GLM-5.1, GLM-5, Kimi K2.7 Code, Kimi K2.6, MiMo-V2.5-Pro, MiMo-V2.5, Qwen3.7 Max, Qwen3.7 Plus, Qwen3.6 Plus, MiniMax M2.7, MiniMax M3, DeepSeek V4 Pro, DeepSeek V4 Flash를 포함하며, 롤링 윈도우(5시간, 주간, 월간)에 걸쳐 더 높은 요청 할당량을 적용합니다. 이는 대략 5시간당 $12, 주당 $30, 월 $60에 해당합니다(실제 요청 수는 모델 및 사용량에 따라 다름).",
 
   "zen.api.error.rateLimitExceeded": "속도 제한을 초과했습니다. 나중에 다시 시도해 주세요.",
   "zen.api.error.modelNotSupported": "{{model}} 모델은 지원되지 않습니다",
   "zen.api.error.modelFormatNotSupported": "{{model}} 모델은 {{format}} 형식에 대해 지원되지 않습니다",
-  "zen.api.error.noProviderAvailable": "사용 가능한 프로바이더가 없습니다",
-  "zen.api.error.providerNotSupported": "{{provider}} 프로바이더는 지원되지 않습니다",
+  "zen.api.error.noProviderAvailable": "사용 가능한 제공자가 없습니다",
+  "zen.api.error.providerNotSupported": "{{provider}} 제공자는 지원되지 않습니다",
   "zen.api.error.missingApiKey": "API 키가 누락되었습니다.",
   "zen.api.error.invalidApiKey": "유효하지 않은 API 키입니다.",
   "zen.api.error.subscriptionQuotaExceeded": "구독 할당량을 초과했습니다. {{retryIn}} 후 다시 시도해 주세요.",
@@ -436,10 +437,10 @@ export const dict = {
     "최고의 성능을 보장하기 위해 코딩 에이전트용 모델을 구체적으로 벤치마킹하고 테스트했습니다.",
   "workspace.newUser.feature.quality.title": "최고 품질",
   "workspace.newUser.feature.quality.body":
-    "최적의 성능을 위해 구성된 모델에 액세스하세요 - 다운그레이드나 저렴한 프로바이더로 라우팅되지 않습니다.",
+    "최적의 성능을 위해 구성된 모델에 액세스하세요 - 다운그레이드나 저렴한 제공자로 라우팅되지 않습니다.",
   "workspace.newUser.feature.lockin.title": "락인(Lock-in) 없음",
   "workspace.newUser.feature.lockin.body":
-    "Zen을 어떤 코딩 에이전트와도 함께 사용할 수 있으며, 원할 때 언제든지 OpenCode와 함께 다른 프로바이더를 계속 사용할 수 있습니다.",
+    "Zen을 어떤 코딩 에이전트와도 함께 사용할 수 있으며, 원할 때 언제든지 OpenCode와 함께 다른 제공자를 계속 사용할 수 있습니다.",
   "workspace.newUser.copyApiKey": "API 키 복사",
   "workspace.newUser.copyKey": "키 복사",
   "workspace.newUser.copied": "복사됨!",
@@ -456,14 +457,14 @@ export const dict = {
   "workspace.models.table.enabled": "활성화됨",
 
   "workspace.providers.title": "나만의 키 가져오기 (BYOK)",
-  "workspace.providers.subtitle": "AI 프로바이더의 자체 API 키를 구성하세요.",
+  "workspace.providers.subtitle": "AI 제공자의 자체 API 키를 구성하세요.",
   "workspace.providers.placeholder": "{{provider}} API 키 입력 ({{prefix}}...)",
   "workspace.providers.configure": "구성",
   "workspace.providers.edit": "편집",
   "workspace.providers.delete": "삭제",
   "workspace.providers.saving": "저장 중...",
   "workspace.providers.save": "저장",
-  "workspace.providers.table.provider": "프로바이더",
+  "workspace.providers.table.provider": "제공자",
   "workspace.providers.table.apiKey": "API 키",
 
   "workspace.usage.title": "사용 내역",
@@ -644,7 +645,7 @@ export const dict = {
   "workspace.lite.subscription.resetsIn": "초기화까지 남은 시간:",
   "workspace.lite.subscription.useBalance": "사용 한도 도달 후에는 보유 잔액 사용",
   "workspace.lite.subscription.selectProvider":
-    'Go 모델을 사용하려면 opencode 설정에서 "OpenCode Go"를 프로바이더로 선택하세요.',
+    'Go 모델을 사용하려면 opencode 설정에서 "OpenCode Go"를 공급자로 선택하세요.',
   "workspace.lite.black.message":
     "현재 OpenCode Black을 구독 중이거나 대기 명단에 등록되어 있습니다. Go로 전환하려면 먼저 구독을 취소해 주세요.",
   "workspace.lite.other.message":
@@ -712,14 +713,14 @@ export const dict = {
   "download.platform.linuxRpm": "Linux (.rpm)",
 
   "download.faq.a3.beforeLocal":
-    "꼭 그렇지는 않지만, 아마도 필요할 것입니다. OpenCode를 유료 프로바이더에 연결하려면 AI 구독이 필요할 수 있습니다. 하지만",
+    "꼭 그렇지는 않지만, 아마도 필요할 것입니다. OpenCode를 유료 제공자에 연결하려면 AI 구독이 필요할 수 있습니다. 하지만",
   "download.faq.a3.localLink": "로컬 모델",
   "download.faq.a3.afterLocal.beforeZen": "은 무료로 사용할 수 있습니다. 우리는",
-  "download.faq.a3.afterZen": " 사용을 권장하지만, OpenCode는 OpenAI, Anthropic, xAI 등 모든 인기 프로바이더와 작동합니다.",
+  "download.faq.a3.afterZen": " 사용을 권장하지만, OpenCode는 OpenAI, Anthropic, xAI 등 모든 인기 제공자와 작동합니다.",
 
   "download.faq.a5.p1": "OpenCode는 100% 무료로 사용할 수 있습니다.",
   "download.faq.a5.p2.beforeZen":
-    "추가 비용은 모델 프로바이더 구독에서 발생합니다. OpenCode는 모든 모델 프로바이더와 작동하지만, 우리는",
+    "추가 비용은 모델 제공자 구독에서 발생합니다. OpenCode는 모든 모델 제공자와 작동하지만, 우리는",
   "download.faq.a5.p2.afterZen": " 사용을 권장합니다.",
 
   "download.faq.a6.p1": "데이터와 정보는 OpenCode에서 공유 링크를 생성할 때만 저장됩니다.",
@@ -763,7 +764,7 @@ export const dict = {
     "좌석(seat) 당 엔터프라이즈 가격을 제공합니다. 자체 LLM 게이트웨이를 보유한 경우, 사용된 토큰에 대해 비용을 청구하지 않습니다. 자세한 내용은 조직의 요구사항에 따른 맞춤 견적을 위해 문의해주세요.",
   "enterprise.faq.q4": "OpenCode 엔터프라이즈에서 데이터는 안전한가요?",
   "enterprise.faq.a4":
-    "네. OpenCode는 코드나 컨텍스트 데이터를 저장하지 않습니다. 모든 처리는 로컬에서 이루어지거나 AI 프로바이더에 대한 직접 API 호출을 통해 이루어집니다. 중앙 설정 및 SSO 통합을 통해 데이터는 조직의 인프라 내에서 안전하게 유지됩니다.",
+    "네. OpenCode는 코드나 컨텍스트 데이터를 저장하지 않습니다. 모든 처리는 로컬에서 이루어지거나 AI 제공자에 대한 직접 API 호출을 통해 이루어집니다. 중앙 설정 및 SSO 통합을 통해 데이터는 조직의 인프라 내에서 안전하게 유지됩니다.",
 
   "brand.title": "OpenCode | 브랜드",
   "brand.meta.description": "OpenCode 브랜드 가이드라인",

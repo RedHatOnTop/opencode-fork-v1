@@ -191,13 +191,6 @@ export const dict = {
   "provider.custom.error.baseURL.format": "ต้องขึ้นต้นด้วย http:// หรือ https://",
   "provider.custom.error.required": "จำเป็น",
   "provider.custom.error.duplicate": "ซ้ำ",
-  "provider.custom.error.fetch": "Failed to fetch models",
-  "provider.custom.models.fetch": "Fetch models",
-  "provider.custom.models.fetching": "Fetching...",
-  "provider.custom.models.search": "Search models...",
-  "provider.custom.models.toggleAll": "Toggle all",
-  "provider.custom.models.selected": "{{count}} of {{total}} selected",
-  "provider.custom.models.noModelsFound": "No models found at this endpoint",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} ที่ยกเลิกการเชื่อมต่อแล้ว",
   "provider.disconnect.toast.disconnected.description": "โมเดล {{provider}} ไม่พร้อมใช้งานอีกต่อไป",

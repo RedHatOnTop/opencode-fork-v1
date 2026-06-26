@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 $RepoUrl = "https://github.com/RedHatOnTop/opencode-fork-v1"
 $Branch = "dev"
 $InstallDir = "$env:USERPROFILE\.opencode-fork"
-$BinName = "opencode.exe"
+$BinName = "opencode-mod.exe"
 
 function Write-Step($msg) {
     Write-Host "`n[*] $msg" -ForegroundColor Cyan
@@ -138,8 +138,8 @@ $BinPath = "$BinDir\$BinName"
 
 if (-not (Test-Path $BinPath)) {
     # The build may produce a different binary name; check for it
-    $possibleBin = Get-ChildItem -Path "$InstallDir\packages\opencode" -Filter "opencode*" -Recurse -File |
-        Where-Object { $_.DirectoryName -like "*bin*" -or $_.Name -like "opencode.exe" } |
+    $possibleBin = Get-ChildItem -Path "$InstallDir\packages\opencode" -Filter "opencode-mod*" -Recurse -File |
+        Where-Object { $_.DirectoryName -like "*bin*" -or $_.Name -like "opencode-mod.exe" } |
         Select-Object -First 1
 
     if ($possibleBin) {

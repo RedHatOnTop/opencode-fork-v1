@@ -1,10 +1,10 @@
+import type { Argv } from "yargs"
 import { Auth } from "../../auth"
 import { cmd } from "./cmd"
 import { CliError, effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as Prompt from "../effect/prompt"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
-import * as prompts from "@clack/prompts"
 
 import { map, pipe, sortBy, values } from "remeda"
 import path from "path"
@@ -17,7 +17,6 @@ import { Process } from "@/util/process"
 import { errorMessage } from "@/util/error"
 import { text } from "node:stream/consumers"
 import { Effect, Option } from "effect"
-import { AppRuntime } from "@/effect/app-runtime"
 
 type PluginAuth = NonNullable<Hooks["auth"]>
 
@@ -136,7 +135,7 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
     if (authorize.method === "code") {
       const code = yield* Prompt.text({
         message: "Paste the authorization code here: ",
-        validate: (x: any) => (x && x.length > 0 ? undefined : "Required"),
+        validate: (x) => (x && x.length > 0 ? undefined : "Required"),
       })
       const authorizationCode = yield* promptValue(code)
       const result = yield* cliTry("Failed to authorize: ", () => authorize.callback(authorizationCode))
@@ -173,7 +172,7 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
   if (method.type === "api") {
     const key = yield* Prompt.password({
       message: "Enter your API key",
-      validate: (x: any) => (x && x.length > 0 ? undefined : "Required"),
+      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
     })
     const apiKey = yield* promptValue(key)
 
@@ -242,137 +241,8 @@ export const ProvidersCommand = cmd({
   aliases: ["auth"],
   describe: "manage AI providers and credentials",
   builder: (yargs) =>
-    yargs
-      .command(ProvidersListCommand)
-      .command(ProvidersLoginCommand)
-      .command(ProvidersLogoutCommand)
-      .command(ProvidersAddCustomCommand)
-      .demandCommand(),
+    yargs.command(ProvidersListCommand).command(ProvidersLoginCommand).command(ProvidersLogoutCommand).demandCommand(),
   async handler() {},
-})
-
-export const ProvidersAddCustomCommand = cmd({
-  command: "add-custom",
-  describe: "easily add a custom provider via endpoint URL with model discovery",
-  async handler(_args) {
-    UI.empty()
-    prompts.intro("Add Custom Provider")
-
-    const url = await prompts.text({
-      message: "Enter the provider endpoint URL (e.g. http://localhost:11434/v1)",
-      placeholder: "https://api.openai.com/v1",
-      validate: (x: any) => {
-        if (!x || x.trim().length === 0) return "Required"
-        try {
-          new URL(x)
-        } catch {
-          return "Invalid URL"
-        }
-        return undefined
-      },
-    })
-    if (prompts.isCancel(url)) throw new UI.CancelledError()
-
-    const key = await prompts.password({
-      message: "Enter the API key",
-      validate: (x: any) => (x && x.length > 0 ? undefined : "Required"),
-    })
-    if (prompts.isCancel(key)) throw new UI.CancelledError()
-
-    const providerNameRaw = await prompts.text({
-      message: "Enter a name for this custom provider (e.g. custom-local)",
-      placeholder: "my-custom-provider",
-      validate: (x: any) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
-    })
-    if (prompts.isCancel(providerNameRaw)) throw new UI.CancelledError()
-    const providerName = providerNameRaw.toLowerCase()
-
-    const spinner = prompts.spinner()
-    spinner.start("Scanning models from /models ...")
-
-    let modelsData: any
-    try {
-      const endpoint = url.endsWith("/") ? url.slice(0, -1) : url
-      const res = await fetch(`${endpoint}/models`, {
-        headers: {
-          Authorization: `Bearer ${key}`,
-        },
-      })
-      if (!res.ok) {
-        throw new Error(`HTTP Error ${res.status}: ${res.statusText}`)
-      }
-      modelsData = await res.json()
-    } catch (e: any) {
-      spinner.stop("Failed to scan models")
-      prompts.log.error(e.message ?? String(e))
-      return
-    }
-
-    spinner.stop("Models scanned successfully")
-
-    const availableModels: string[] = []
-    if (modelsData?.data && Array.isArray(modelsData.data)) {
-      availableModels.push(...modelsData.data.map((m: any) => m.id))
-    } else if (Array.isArray(modelsData)) {
-      availableModels.push(...modelsData.map((m: any) => m.id ?? m.name ?? String(m)))
-    } else if (modelsData?.object === "list" && Array.isArray(modelsData.data)) {
-      availableModels.push(...modelsData.data.map((m: any) => m.id))
-    }
-
-    if (availableModels.length === 0) {
-      prompts.log.error("No models found. Check the endpoint URL and ensure it returns a /v1/models compatible response.")
-      return
-    }
-
-    const selectedModels = await prompts.multiselect({
-      message: "Select models to add (use spacebar to toggle)",
-      options: availableModels.map((m) => ({ label: m, value: m })),
-    })
-    if (prompts.isCancel(selectedModels)) throw new UI.CancelledError()
-
-    await put(providerName, {
-      type: "api",
-      key,
-    })
-
-    await AppRuntime.runPromise(
-      Config.Service.use((cfg) =>
-        Effect.gen(function* () {
-          const currentConfig = yield* cfg.getGlobal()
-
-          const modelsConfig: Record<string, any> = {}
-          for (const m of selectedModels as string[]) {
-            modelsConfig[m] = {
-              id: m,
-              name: m,
-            }
-          }
-
-          const providerConfig = currentConfig.provider || {}
-          providerConfig[providerName] = {
-            ...providerConfig[providerName],
-            api: "openai",
-            name: providerName,
-            options: {
-              ...(providerConfig[providerName]?.options || {}),
-              baseURL: url,
-            },
-            models: {
-              ...(providerConfig[providerName]?.models || {}),
-              ...modelsConfig,
-            },
-          }
-
-          yield* cfg.updateGlobal({
-            ...currentConfig,
-            provider: providerConfig,
-          })
-        })
-      )
-    )
-
-    prompts.outro(`Successfully added ${selectedModels.length} models for custom provider '${providerName}'!`)
-  },
 })
 
 export const ProvidersListCommand = effectCmd({
@@ -429,7 +299,9 @@ export const ProvidersListCommand = effectCmd({
 export const ProvidersLoginCommand = effectCmd({
   command: "login [url]",
   describe: "log in to a provider",
-  builder: (yargs) =>
+  // URL login skips instance bootstrap, which would load remote config with the stale token and crash before re-auth.
+  instance: (args) => !args.url,
+  builder: (yargs: Argv) =>
     yargs
       .positional("url", {
         describe: "opencode auth provider",
@@ -566,7 +438,7 @@ export const ProvidersLoginCommand = effectCmd({
       provider = (yield* promptValue(
         yield* Prompt.text({
           message: "Enter provider id",
-          validate: (x: any) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
+          validate: (x) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
         }),
       )).replace(/^@ai-sdk\//, "")
 
@@ -607,7 +479,7 @@ export const ProvidersLoginCommand = effectCmd({
 
     const key = yield* Prompt.password({
       message: "Enter your API key",
-      validate: (x: any) => (x && x.length > 0 ? undefined : "Required"),
+      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
     })
     const apiKey = yield* promptValue(key)
     yield* Effect.orDie(authSvc.set(provider, { type: "api", key: apiKey }))
@@ -617,11 +489,16 @@ export const ProvidersLoginCommand = effectCmd({
 })
 
 export const ProvidersLogoutCommand = effectCmd({
-  command: "logout",
+  command: "logout [provider]",
   describe: "log out from a configured provider",
+  builder: (yargs) =>
+    yargs.positional("provider", {
+      describe: "provider id or name to log out from",
+      type: "string",
+    }),
   // Removes a global auth credential; no project instance needed.
   instance: false,
-  handler: Effect.fn("Cli.providers.logout")(function* (_args) {
+  handler: Effect.fn("Cli.providers.logout")(function* (args) {
     const authSvc = yield* Auth.Service
     const modelsDev = yield* ModelsDev.Service
 
@@ -633,17 +510,25 @@ export const ProvidersLogoutCommand = effectCmd({
       return
     }
     const database = yield* modelsDev.get()
-    const selected = yield* promptValue(
-      yield* Prompt.select({
-        message: "Select provider",
-        options: credentials.map(([key, value]) => ({
-          label: (database[key]?.name || key) + UI.Style.TEXT_DIM + " (" + value.type + ")",
-          value: key,
-        })),
-      })
-    )
-    const providerID = selected
-    yield* Effect.orDie(authSvc.remove(providerID))
+    const options = credentials.map(([key, value]) => ({
+      label: (database[key]?.name || key) + UI.Style.TEXT_DIM + " (" + value.type + ")",
+      value: key,
+    }))
+    const provider = args.provider
+      ? options.find(
+          (option) =>
+            option.value === args.provider ||
+            database[option.value]?.name?.toLowerCase() === args.provider?.toLowerCase(),
+        )?.value
+      : yield* promptValue(
+          yield* Prompt.autocomplete({
+            message: "Select provider",
+            maxItems: 8,
+            options,
+          }),
+        )
+    if (!provider) return yield* fail(`Unknown configured provider "${args.provider}"`)
+    yield* Effect.orDie(authSvc.remove(provider))
     yield* Prompt.outro("Logout successful")
   }),
 })

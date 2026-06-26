@@ -1,3 +1,4 @@
+import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
 // CLI entry point for `opencode run`.
 //
 // Handles three modes:
@@ -17,19 +18,12 @@ import { pathToFileURL } from "url"
 import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
-import { ServerAuth } from "@/server/auth"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
-import { Agent } from "@/agent/agent"
-import { Permission } from "@/permission"
-import { RuntimeFlags } from "@/effect/runtime-flags"
-import { InstanceRef } from "@/effect/instance-ref"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
-import * as SandboxLifecycle from "@/sandbox/lifecycle"
 
-const runtimeTask = import("./run/runtime")
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
 function pick(value: string | undefined): ModelInput | undefined {
@@ -221,8 +215,8 @@ export const RunCommand = effectCmd({
       })
       .option("replay", {
         type: "boolean",
-        default: false,
-        describe: "replay visible session history on interactive resume",
+        default: true,
+        describe: "replay interactive session history on resume and after resize (use --no-replay to disable)",
       })
       .option("replay-limit", {
         type: "number",
@@ -239,25 +233,16 @@ export const RunCommand = effectCmd({
         describe: "auto-approve permissions that are not explicitly denied (dangerous!)",
         default: false,
       })
-      .option("sandbox", {
-        type: "string",
-        describe:
-          "Sandbox isolation mode: 'docker' runs bash commands in an Alpine Linux container (default), 'off' disables isolation.",
-        choices: ["docker", "off"],
-        default: "docker",
-      })
-      .option("sandbox-network", {
-        type: "string",
-        describe: "Docker sandbox network mode: 'bridge' allows outbound traffic, 'none' blocks all network access.",
-        choices: ["bridge", "none"],
-        default: "bridge",
-      })
       .option("demo", {
         type: "boolean",
         default: false,
         describe: "enable direct interactive demo slash commands; pass one as the message to run it immediately",
       }),
   handler: Effect.fn("Cli.run")(function* (args) {
+    const { Agent } = yield* Effect.promise(() => import("@/agent/agent"))
+    const { RuntimeFlags } = yield* Effect.promise(() => import("@/effect/runtime-flags"))
+    const { InstanceRef } = yield* Effect.promise(() => import("@/effect/instance-ref"))
+    const { ServerAuth } = yield* Effect.promise(() => import("@/server/auth"))
     const agentSvc = yield* Agent.Service
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
@@ -290,10 +275,6 @@ export const RunCommand = effectCmd({
 
       if (args.interactive && args.format === "json") {
         die("--interactive cannot be used with --format json")
-      }
-
-      if (args.replay && !args.interactive) {
-        die("--replay requires --interactive")
       }
 
       if (args["replay-limit"] !== undefined && !args.interactive) {
@@ -381,7 +362,7 @@ export const RunCommand = effectCmd({
         process.exit(1)
       }
 
-      const rules: Permission.Ruleset = args.interactive
+      const rules: PermissionV1.Ruleset = args.interactive
         ? []
         : [
             {
@@ -472,7 +453,7 @@ export const RunCommand = effectCmd({
         const name = title()
         const result = await sdk.session.create({
           title: name,
-          permission: [...rules] as any,
+          permission: [...rules],
         })
         const id = result.data?.id
         if (!id) {
@@ -515,7 +496,7 @@ export const RunCommand = effectCmd({
                 variant: input.variant,
               }
             : undefined,
-          permission: [...rules] as any,
+          permission: [...rules],
         })
         const id = result.data?.id
         if (!id) {
@@ -629,239 +610,240 @@ export const RunCommand = effectCmd({
         }
         const sessionID = sess.id
 
-        // Sandbox lifecycle: start Docker container before agent execution
-        const sandboxNetwork = (args["sandbox-network"] as "bridge" | "none" | undefined) ?? "bridge"
-        const sandboxConfig = { enabled: args.sandbox !== "off", network: sandboxNetwork }
-        const sandboxResult = await SandboxLifecycle.start(directory ?? process.cwd(), sessionID, sandboxConfig)
-        if (sandboxResult.warning) {
-          UI.println(UI.Style.TEXT_WARNING + sandboxResult.warning + UI.Style.TEXT_NORMAL)
+        function emit(type: string, data: Record<string, unknown>) {
+          if (args.format === "json") {
+            process.stdout.write(
+              JSON.stringify({
+                type,
+                timestamp: Date.now(),
+                sessionID,
+                ...data,
+              }) + EOL,
+            )
+            return true
+          }
+          return false
         }
 
-        try {
-          function emit(type: string, data: Record<string, unknown>) {
-            if (args.format === "json") {
-              process.stdout.write(
-                JSON.stringify({
-                  type,
-                  timestamp: Date.now(),
-                  sessionID,
-                  ...data,
-                }) + EOL,
-              )
-              return true
+        // Consume one subscribed event stream for the active session and mirror it
+        // to stdout/UI. `client` is passed explicitly because attach mode may
+        // rebind the SDK to the session's directory after the subscription is
+        // created, and replies issued from inside the loop must use that client.
+        async function loop(client: OpencodeClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
+          const toggles = new Map<string, boolean>()
+          let error: string | undefined
+
+          for await (const event of events.stream) {
+            if (
+              event.type === "message.updated" &&
+              event.properties.sessionID === sessionID &&
+              event.properties.info.role === "assistant" &&
+              args.format !== "json" &&
+              toggles.get("start") !== true
+            ) {
+              UI.empty()
+              UI.println(`> ${event.properties.info.agent} · ${event.properties.info.modelID}`)
+              UI.empty()
+              toggles.set("start", true)
             }
-            return false
-          }
 
-          // Consume one subscribed event stream for the active session and mirror it
-          // to stdout/UI. `client` is passed explicitly because attach mode may
-          // rebind the SDK to the session's directory after the subscription is
-          // created, and replies issued from inside the loop must use that client.
-          async function loop(client: OpencodeClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
-            const toggles = new Map<string, boolean>()
-            let error: string | undefined
+            if (event.type === "message.part.updated") {
+              const part = event.properties.part
+              if (part.sessionID !== sessionID) continue
 
-            for await (const event of events.stream) {
-              if (
-                event.type === "message.updated" &&
-                event.properties.sessionID === sessionID &&
-                event.properties.info.role === "assistant" &&
-                args.format !== "json" &&
-                toggles.get("start") !== true
-              ) {
-                UI.empty()
-                UI.println(`> ${event.properties.info.agent} · ${event.properties.info.modelID}`)
-                UI.empty()
-                toggles.set("start", true)
-              }
-
-              if (event.type === "message.part.updated") {
-                const part = event.properties.part
-                if (part.sessionID !== sessionID) continue
-
-                if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
-                  if (emit("tool_use", { part })) continue
-                  if (part.state.status === "completed") {
-                    await tool(part)
-                    continue
-                  }
-                  await toolError(part)
-                  UI.error(part.state.error)
-                }
-
-                if (
-                  part.type === "tool" &&
-                  part.tool === "task" &&
-                  part.state.status === "running" &&
-                  args.format !== "json"
-                ) {
-                  if (toggles.get(part.id) === true) continue
+              if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
+                if (emit("tool_use", { part })) continue
+                if (part.state.status === "completed") {
                   await tool(part)
-                  toggles.set(part.id, true)
+                  continue
                 }
-
-                if (part.type === "step-start") {
-                  if (emit("step_start", { part })) continue
-                }
-
-                if (part.type === "step-finish") {
-                  if (emit("step_finish", { part })) continue
-                }
-
-                if (part.type === "text" && part.time?.end) {
-                  if (emit("text", { part })) continue
-                  const text = part.text.trim()
-                  if (!text) continue
-                  if (!process.stdout.isTTY) {
-                    process.stdout.write(text + EOL)
-                    continue
-                  }
-                  UI.empty()
-                  UI.println(text)
-                  UI.empty()
-                }
-
-                if (part.type === "reasoning" && part.time?.end && thinking) {
-                  if (emit("reasoning", { part })) continue
-                  const text = part.text.trim()
-                  if (!text) continue
-                  const line = `Thinking: ${text}`
-                  if (process.stdout.isTTY) {
-                    UI.empty()
-                    UI.println(`${UI.Style.TEXT_DIM}\u001b[3m${line}\u001b[0m${UI.Style.TEXT_NORMAL}`)
-                    UI.empty()
-                    continue
-                  }
-                  process.stdout.write(line + EOL)
-                }
-              }
-
-              if (event.type === "session.error") {
-                const props = event.properties
-                if (props.sessionID !== sessionID || !props.error) continue
-                let err = String(props.error.name)
-                if ("data" in props.error && props.error.data && "message" in props.error.data) {
-                  err = String(props.error.data.message)
-                }
-                error = error ? error + EOL + err : err
-                if (emit("error", { error: props.error })) continue
-                UI.error(err)
+                await toolError(part)
+                UI.error(part.state.error)
               }
 
               if (
-                event.type === "session.status" &&
-                event.properties.sessionID === sessionID &&
-                event.properties.status.type === "idle"
+                part.type === "tool" &&
+                part.tool === "task" &&
+                part.state.status === "running" &&
+                args.format !== "json"
               ) {
-                break
+                if (toggles.get(part.id) === true) continue
+                await tool(part)
+                toggles.set(part.id, true)
               }
 
-              if (event.type === "permission.asked") {
-                const permission = event.properties
-                if (permission.sessionID !== sessionID) continue
+              if (part.type === "step-start") {
+                if (emit("step_start", { part })) continue
+              }
 
-                if (args["dangerously-skip-permissions"]) {
-                  await client.permission.reply({
-                    requestID: permission.id,
-                    reply: "once",
-                  })
-                } else {
-                  UI.println(
-                    UI.Style.TEXT_WARNING_BOLD + "!",
-                    UI.Style.TEXT_NORMAL +
-                      `permission requested: ${permission.permission} (${permission.patterns.join(", ")}); auto-rejecting`,
-                  )
-                  await client.permission.reply({
-                    requestID: permission.id,
-                    reply: "reject",
-                  })
+              if (part.type === "step-finish") {
+                if (emit("step_finish", { part })) continue
+              }
+
+              if (part.type === "text" && part.time?.end) {
+                if (emit("text", { part })) continue
+                const text = part.text.trim()
+                if (!text) continue
+                if (!process.stdout.isTTY) {
+                  process.stdout.write(text + EOL)
+                  continue
                 }
+                UI.empty()
+                UI.println(text)
+                UI.empty()
+              }
+
+              if (part.type === "reasoning" && part.time?.end && thinking) {
+                if (emit("reasoning", { part })) continue
+                const text = part.text.trim()
+                if (!text) continue
+                const line = `Thinking: ${text}`
+                if (process.stdout.isTTY) {
+                  UI.empty()
+                  UI.println(`${UI.Style.TEXT_DIM}\u001b[3m${line}\u001b[0m${UI.Style.TEXT_NORMAL}`)
+                  UI.empty()
+                  continue
+                }
+                process.stdout.write(line + EOL)
               }
             }
-            return error
+
+            if (event.type === "session.error") {
+              const props = event.properties
+              if (props.sessionID !== sessionID || !props.error) continue
+              let err = String(props.error.name)
+              if ("data" in props.error && props.error.data && "message" in props.error.data) {
+                err = String(props.error.data.message)
+              }
+              error = error ? error + EOL + err : err
+              if (emit("error", { error: props.error })) continue
+              UI.error(err)
+            }
+
+            if (
+              event.type === "session.status" &&
+              event.properties.sessionID === sessionID &&
+              event.properties.status.type === "idle"
+            ) {
+              break
+            }
+
+            if (event.type === "permission.asked") {
+              const permission = event.properties
+              if (permission.sessionID !== sessionID) continue
+
+              if (args["dangerously-skip-permissions"]) {
+                await client.permission.reply({
+                  requestID: permission.id,
+                  reply: "once",
+                })
+              } else {
+                UI.println(
+                  UI.Style.TEXT_WARNING_BOLD + "!",
+                  UI.Style.TEXT_NORMAL +
+                    `permission requested: ${permission.permission} (${permission.patterns.join(", ")}); auto-rejecting`,
+                )
+                await client.permission.reply({
+                  requestID: permission.id,
+                  reply: "reject",
+                })
+              }
+            }
           }
-          const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
-          const client = args.attach ? attachSDK(cwd) : sdk
+          return error
+        }
+        const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
+        const client = args.attach ? attachSDK(cwd) : sdk
 
-          // Validate agent if specified
-          const agent = await pickAgent(client)
+        // Validate agent if specified
+        const agent = await pickAgent(client)
 
-          await share(client, sessionID)
+        await share(client, sessionID)
 
-          if (!args.interactive) {
-            const events = await client.event.subscribe()
-            loop(client, events).catch((e) => {
-              console.error(e)
-              process.exit(1)
-            })
+        if (!args.interactive) {
+          const events = await client.event.subscribe()
+          const completed = loop(client, events).catch((e) => {
+            console.error(e)
+            process.exitCode = 1
+          })
+          async function finish() {
+            if (args.attach) return
+            const error = await completed
+            if (error) process.exitCode = 1
+          }
 
-            if (args.command) {
-              const result = await client.session.command({
-                sessionID,
-                agent,
-                model: args.model,
-                command: args.command,
-                arguments: message,
-                variant: args.variant,
-              })
-              if (result.error) {
-                if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
-                process.exitCode = 1
-              }
-              return
-            }
-
-            const model = pick(args.model)
-            const result = await client.session.prompt({
+          if (args.command) {
+            const result = await client.session.command({
               sessionID,
               agent,
-              model,
+              model: args.model,
+              command: args.command,
+              arguments: message,
               variant: args.variant,
-              parts: [...files, { type: "text", text: message }],
             })
             if (result.error) {
               if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
               process.exitCode = 1
+              return
             }
+            await finish()
             return
           }
 
           const model = pick(args.model)
-          const { runInteractiveMode } = await runtimeTask
-          try {
-            await runInteractiveMode({
-              sdk: client,
-              directory: cwd,
-              sessionID,
-              sessionTitle: sess.title,
-              resume: Boolean(args.session || args.continue) && !args.fork,
-              replay,
-              replayLimit: args["replay-limit"],
-              agent,
-              model,
-              variant: args.variant,
-              files,
-              initialInput,
-              createSession: createFreshSession,
-              thinking,
-              demo: args.demo,
-            })
-          } catch (error) {
-            dieInteractive(error)
+          const result = await client.session.prompt({
+            sessionID,
+            agent,
+            model,
+            variant: args.variant,
+            parts: [...files, { type: "text", text: message }],
+          })
+          if (result.error) {
+            if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
+            process.exitCode = 1
+            return
           }
+          await finish()
           return
-        } finally {
-          await SandboxLifecycle.stop()
         }
+
+        const model = pick(args.model)
+        const { runInteractiveMode } = await import("./run/runtime")
+        try {
+          await runInteractiveMode({
+            sdk: client,
+            directory: cwd,
+            sessionID,
+            sessionTitle: sess.title,
+            resume: Boolean(args.session || args.continue) && !args.fork,
+            replay,
+            replayLimit: args["replay-limit"],
+            agent,
+            model,
+            variant: args.variant,
+            files,
+            initialInput,
+            createSession: createFreshSession,
+            thinking,
+            backgroundSubagents: flags.experimentalBackgroundSubagents,
+            demo: args.demo,
+          })
+        } catch (error) {
+          dieInteractive(error)
+        }
+        return
       }
 
       if (args.interactive && !args.attach && !args.session && !args.continue) {
         const model = pick(args.model)
-        const { runInteractiveLocalMode } = await runtimeTask
+        const { runInteractiveLocalMode } = await import("./run/runtime")
         const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
           const { Server } = await import("@/server/server")
           const request = new Request(input, init)
-          return Server.Default().app.fetch(request)
+          const headers = new Headers(request.headers)
+          const auth = ServerAuth.header()
+          if (auth) headers.set("Authorization", auth)
+          return Server.Default().app.fetch(new Request(request, { headers }))
         }) as typeof globalThis.fetch
 
         try {
@@ -880,6 +862,7 @@ export const RunCommand = effectCmd({
             files,
             initialInput,
             thinking,
+            backgroundSubagents: flags.experimentalBackgroundSubagents,
             demo: args.demo,
           })
         } catch (error) {
@@ -895,7 +878,10 @@ export const RunCommand = effectCmd({
       const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
         const { Server } = await import("@/server/server")
         const request = new Request(input, init)
-        return Server.Default().app.fetch(request)
+        const headers = new Headers(request.headers)
+        const auth = ServerAuth.header()
+        if (auth) headers.set("Authorization", auth)
+        return Server.Default().app.fetch(new Request(request, { headers }))
       }) as typeof globalThis.fetch
       const sdk = createOpencodeClient({
         baseUrl: "http://opencode.internal",

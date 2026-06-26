@@ -11,7 +11,7 @@ set -euo pipefail
 REPO_URL="https://github.com/RedHatOnTop/opencode-fork-v1"
 BRANCH="dev"
 INSTALL_DIR="${HOME}/.opencode-fork"
-BIN_NAME="opencode"
+BIN_NAME="opencode-mod"
 
 # ── Colors ──────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -149,15 +149,15 @@ step "Installing opencode-fork command..."
 
 # Find the built binary
 BIN_PATH=""
-if [ -f "$INSTALL_DIR/packages/opencode/bin/opencode" ]; then
-    BIN_PATH="$INSTALL_DIR/packages/opencode/bin/opencode"
-elif [ -f "$INSTALL_DIR/packages/opencode/bin/opencode-linux-$ARCH_NORM" ]; then
-    BIN_PATH="$INSTALL_DIR/packages/opencode/bin/opencode-linux-$ARCH_NORM"
-elif [ -f "$INSTALL_DIR/packages/opencode/bin/opencode-darwin-$ARCH_NORM" ]; then
-    BIN_PATH="$INSTALL_DIR/packages/opencode/bin/opencode-darwin-$ARCH_NORM"
+if [ -f "$INSTALL_DIR/packages/opencode/bin/opencode-mod" ]; then
+    BIN_PATH="$INSTALL_DIR/packages/opencode/bin/opencode-mod"
+elif [ -f "$INSTALL_DIR/packages/opencode/bin/opencode-mod-linux-$ARCH_NORM" ]; then
+    BIN_PATH="$INSTALL_DIR/packages/opencode/bin/opencode-mod-linux-$ARCH_NORM"
+elif [ -f "$INSTALL_DIR/packages/opencode/bin/opencode-mod-darwin-$ARCH_NORM" ]; then
+    BIN_PATH="$INSTALL_DIR/packages/opencode/bin/opencode-mod-darwin-$ARCH_NORM"
 else
-    # Search for any opencode binary in the bin directory
-    BIN_PATH="$(find "$INSTALL_DIR/packages/opencode/bin" -name 'opencode*' -type f 2>/dev/null | head -1 || true)"
+    # Search for any opencode-mod binary in the bin directory
+    BIN_PATH="$(find "$INSTALL_DIR/packages/opencode/bin" -name 'opencode-mod*' -type f 2>/dev/null | head -1 || true)"
 fi
 
 if [ -z "$BIN_PATH" ]; then

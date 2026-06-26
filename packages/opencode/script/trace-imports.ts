@@ -2,10 +2,10 @@
 import * as path from "path"
 import * as ts from "typescript"
 
-const BASE_DIR = process.env.TRACE_BASE_DIR || path.resolve(import.meta.dirname, "..")
+const BASE_DIR = "/home/thdxr/dev/projects/anomalyco/opencode/packages/opencode"
 
 // Get entry file from command line arg or use default
-const ENTRY_FILE = process.argv[2] || "src/cli/cmd/tui/plugin/index.ts"
+const ENTRY_FILE = process.argv[2] || "src/plugin/tui/runtime.ts"
 
 const visited = new Set<string>()
 

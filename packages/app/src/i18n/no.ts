@@ -194,13 +194,6 @@ export const dict = {
   "provider.custom.error.baseURL.format": "Må starte med http:// eller https://",
   "provider.custom.error.required": "Påkrevd",
   "provider.custom.error.duplicate": "Duplikat",
-  "provider.custom.error.fetch": "Failed to fetch models",
-  "provider.custom.models.fetch": "Fetch models",
-  "provider.custom.models.fetching": "Fetching...",
-  "provider.custom.models.search": "Search models...",
-  "provider.custom.models.toggleAll": "Toggle all",
-  "provider.custom.models.selected": "{{count}} of {{total}} selected",
-  "provider.custom.models.noModelsFound": "No models found at this endpoint",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} frakoblet",
   "provider.disconnect.toast.disconnected.description": "Modeller fra {{provider}} er ikke lenger tilgjengelige.",

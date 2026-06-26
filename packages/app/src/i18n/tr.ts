@@ -196,13 +196,6 @@ export const dict = {
   "provider.custom.error.baseURL.format": "http:// veya https:// ile başlamalı",
   "provider.custom.error.required": "Gerekli",
   "provider.custom.error.duplicate": "Tekrar",
-  "provider.custom.error.fetch": "Failed to fetch models",
-  "provider.custom.models.fetch": "Fetch models",
-  "provider.custom.models.fetching": "Fetching...",
-  "provider.custom.models.search": "Search models...",
-  "provider.custom.models.toggleAll": "Toggle all",
-  "provider.custom.models.selected": "{{count}} of {{total}} selected",
-  "provider.custom.models.noModelsFound": "No models found at this endpoint",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} bağlantısı kesildi",
   "provider.disconnect.toast.disconnected.description": "{{provider}} modelleri artık kullanılabilir değil.",

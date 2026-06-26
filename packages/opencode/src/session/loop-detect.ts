@@ -1,20 +1,28 @@
 export * as LoopDetect from "./loop-detect"
 
-import * as Log from "@opencode-ai/core/util/log"
-import type { MessageV2 } from "./message-v2"
-
-const log = Log.create({ service: "session.loop-detect" })
-
-export interface Snapshot {
-  readonly toolSignatures: ReadonlyArray<string>
-  readonly fileSignatures: ReadonlyArray<string>
-  readonly step: number
-}
-
 const WINDOW_SIZE = 6
 const REPETITION_THRESHOLD = 4
 const FILE_EDIT_TOOLS = new Set(["edit", "write", "patch", "multiEdit"])
 const FILE_READ_TOOLS = new Set(["read", "glob", "grep", "search", "list"])
+
+interface ToolPartLike {
+  readonly type: string
+  readonly tool: string
+  readonly state: {
+    readonly status: string
+    readonly input?: Record<string, unknown>
+  }
+}
+
+interface MessageLike {
+  readonly parts: ReadonlyArray<{ type: string }>
+}
+
+function isToolPart(part: { type: string }): part is ToolPartLike {
+  if (part.type !== "tool") return false
+  const t = part as Record<string, unknown>
+  return typeof t.tool === "string" && typeof t.state === "object" && t.state !== null
+}
 
 function hashString(input: string): number {
   let h = 0
@@ -80,77 +88,51 @@ export interface LoopResult {
   readonly step: number
 }
 
-export interface Detector {
-  readonly record: (parts: ReadonlyArray<MessageV2.Part>) => void
-  readonly check: (step: number) => LoopResult
-  readonly snapshot: () => Snapshot
-  readonly reset: () => void
-}
-
-export function make(): Detector {
-  let toolSigs: string[] = []
-  let allFiles: string[] = []
-
-  const record = (parts: ReadonlyArray<MessageV2.Part>) => {
-    for (const part of parts) {
-      if (part.type !== "tool") continue
+function extractToolCalls(messages: ReadonlyArray<MessageLike>): { sigs: string[]; files: string[] } {
+  const sigs: string[] = []
+  const files: string[] = []
+  const maxCalls = WINDOW_SIZE * 3
+  for (let mi = messages.length - 1; mi >= 0 && sigs.length < maxCalls; mi--) {
+    const parts = messages[mi].parts
+    for (let pi = parts.length - 1; pi >= 0; pi--) {
+      const part = parts[pi]
+      if (!isToolPart(part)) continue
       const state = part.state
       if (state.status !== "completed" && state.status !== "running") continue
-      const args = (state as { input?: Record<string, unknown> }).input
+      const args = state.input
       if (!args || typeof args !== "object") continue
 
-      const sig = toolSignature(part.tool, args)
-      toolSigs.push(sig)
-
+      sigs.unshift(toolSignature(part.tool, args))
       const file = extractFileFromArgs(part.tool, args)
-      if (file) allFiles.push(file)
-    }
-
-    if (toolSigs.length > WINDOW_SIZE * 3) {
-      toolSigs = toolSigs.slice(-WINDOW_SIZE * 2)
-    }
-    if (allFiles.length > 500) {
-      allFiles = allFiles.slice(-300)
+      if (file) files.unshift(file)
     }
   }
+  return { sigs, files }
+}
 
-  const check = (step: number): LoopResult => {
-    const window = toolSigs.slice(-WINDOW_SIZE)
-    if (window.length < REPETITION_THRESHOLD) {
-      return { isLoop: false, reason: "none", step }
-    }
+export function check(messages: ReadonlyArray<MessageLike>, step: number): LoopResult {
+  const { sigs: toolSigs, files: allFiles } = extractToolCalls(messages)
+  const window = toolSigs.slice(-WINDOW_SIZE)
 
-    const repetition = countRepetition(window)
-    if (repetition >= REPETITION_THRESHOLD) {
-      log.info("repetition detected", { step, repetition, signature: window[window.length - 1] })
-      return { isLoop: true, reason: "repetition", step }
-    }
-
-    if (window.length >= WINDOW_SIZE) {
-      const recentFiles = allFiles.slice(-WINDOW_SIZE * 2)
-      const historicalFiles = allFiles.slice(0, -WINDOW_SIZE * 2)
-      const noNewFiles = !hasNovelFiles(recentFiles, historicalFiles)
-      const noDiversity = !hasDiverseTools(window)
-
-      if (noNewFiles && noDiversity) {
-        log.info("stagnation detected", { step, recentToolCount: window.length })
-        return { isLoop: true, reason: "stagnation", step }
-      }
-    }
-
+  if (window.length < REPETITION_THRESHOLD) {
     return { isLoop: false, reason: "none", step }
   }
 
-  const snapshot = (): Snapshot => ({
-    toolSignatures: toolSigs.slice(-WINDOW_SIZE),
-    fileSignatures: [...new Set(allFiles)].slice(-50),
-    step: toolSigs.length,
-  })
-
-  const reset = () => {
-    toolSigs = []
-    allFiles = []
+  const repetition = countRepetition(window)
+  if (repetition >= REPETITION_THRESHOLD) {
+    return { isLoop: true, reason: "repetition", step }
   }
 
-  return { record, check, snapshot, reset }
+  if (window.length >= WINDOW_SIZE) {
+    const recentFiles = allFiles.slice(-WINDOW_SIZE * 2)
+    const historicalFiles = allFiles.slice(0, -WINDOW_SIZE * 2)
+    const noNewFiles = !hasNovelFiles(recentFiles, historicalFiles)
+    const noDiversity = !hasDiverseTools(window)
+
+    if (noNewFiles && noDiversity) {
+      return { isLoop: true, reason: "stagnation", step }
+    }
+  }
+
+  return { isLoop: false, reason: "none", step }
 }

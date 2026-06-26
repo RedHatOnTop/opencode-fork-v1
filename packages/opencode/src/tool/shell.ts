@@ -3,74 +3,28 @@ import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
 import path from "path"
-import * as Log from "@opencode-ai/core/util/log"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
 import { lazy } from "@/util/lazy"
 import { Language, type Node } from "web-tree-sitter"
 
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Shell } from "@/shell/shell"
+import { Shell } from "@opencode-ai/core/shell"
 import { ShellID } from "./shell/id"
 
 import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-
-import { Sandbox } from "@/sandbox/state"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 
 export { Parameters } from "./shell/prompt"
 
 const MAX_METADATA_LENGTH = 30_000
-
-/**
- * Sensitive environment variable patterns that are filtered out
- * before passing to the AI agent's execution environment when
- * running inside a Docker sandbox.
- *
- * Prevents API keys, tokens, and other credentials from leaking into
- * the container where the agent could exfiltrate them.
- */
-const SENSITIVE_ENV_PATTERNS = [
-  /^ANTHROPIC_API_KEY$/i,
-  /^OPENAI_API_KEY$/i,
-  /^GEMINI_API_KEY$/i,
-  /^GOOGLE_API_KEY$/i,
-  /^COHERE_API_KEY$/i,
-  /^MISTRAL_API_KEY$/i,
-  /^DEEPSEEK_API_KEY$/i,
-  /^OPENROUTER_API_KEY$/i,
-  /^TOGETHER_API_KEY$/i,
-  /^GROQ_API_KEY$/i,
-  /^AWS_SECRET_ACCESS_KEY$/i,
-  /^AWS_SESSION_TOKEN$/i,
-  /^AZURE_OPENAI_API_KEY$/i,
-  /^GITHUB_TOKEN$/i,
-  /^GH_TOKEN$/i,
-  /^NPM_TOKEN$/i,
-  /^DOCKER_TOKEN$/i,
-  /^OPENCODE_PERMISSION$/i,
-  /^HOMEBREW_GITHUB_API_TOKEN$/i,
-  /^HF_TOKEN$/i,
-  /^HUGGINGFACE_TOKEN$/i,
-]
-
-function filterSensitiveEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  if (!Sandbox.isDocker) return env
-  const filtered: NodeJS.ProcessEnv = {}
-  for (const [key, value] of Object.entries(env)) {
-    const blocked = SENSITIVE_ENV_PATTERNS.some((pattern) => pattern.test(key))
-    if (!blocked) filtered[key] = value
-  }
-  return filtered
-}
-
 const CWD = new Set(["cd", "chdir", "popd", "pushd", "push-location", "set-location"])
 const FILES = new Set([
   ...CWD,
@@ -126,8 +80,6 @@ type Chunk = {
   text: string
   size: number
 }
-
-export const log = Log.create({ service: "shell-tool" })
 
 const resolveWasm = (asset: string) => {
   if (asset.startsWith("file://")) return fileURLToPath(asset)
@@ -308,17 +260,27 @@ const parse = Effect.fn("ShellTool.parse")(function* (command: string, ps: boole
   return tree
 })
 
-const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan) {
+const ask = Effect.fn("ShellTool.ask")(function* (
+  ctx: Tool.Context,
+  scan: Scan,
+  input: { command: string; description: string },
+) {
   if (scan.dirs.size > 0) {
-    const globs = Array.from(scan.dirs).map((dir) => {
-      if (process.platform === "win32") return AppFileSystem.normalizePathPattern(path.join(dir, "*"))
+    const directories = Array.from(scan.dirs)
+    const globs = directories.map((dir) => {
+      if (process.platform === "win32") return FSUtil.normalizePathPattern(path.join(dir, "*"))
       return path.join(dir, "*")
     })
     yield* ctx.ask({
       permission: "external_directory",
       patterns: globs,
       always: globs,
-      metadata: {},
+      metadata: {
+        command: input.command,
+        description: input.description,
+        directories,
+        patterns: globs,
+      },
     })
   }
 
@@ -327,47 +289,14 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan)
     permission: ShellID.ToolID,
     patterns: Array.from(scan.patterns),
     always: Array.from(scan.always),
-    metadata: {},
+    metadata: {
+      command: input.command,
+      description: input.description,
+    },
   })
 })
 
 function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
-  // When sandbox mode is active, route command execution through the
-  // Docker container via `docker exec`. The container provides an Alpine
-  // Linux environment that isolates the agent from the host.
-  if (Sandbox.isDocker && Sandbox.containerId) {
-    const safeEnv = filterSensitiveEnv(env)
-    const envArgs = Object.entries(safeEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`])
-    // Map host working directory to the mounted container path.
-    // The container mounts workspaceDir → /workspace, so any host path
-    // within the workspace is remapped to the corresponding /workspace subpath.
-    const workspaceDir = Sandbox.workspaceDir!
-    let containerCwd = "/workspace"
-    if (cwd && workspaceDir) {
-      // Case-insensitive prefix check for Windows hosts; preserve original casing
-      // for the Linux container path since Linux filesystems are case-sensitive.
-      const normCwd = cwd.replace(/\\/g, "/").toLowerCase()
-      const normWs = workspaceDir.replace(/\\/g, "/").toLowerCase()
-      const origCwd = cwd.replace(/\\/g, "/")
-      const origWs = workspaceDir.replace(/\\/g, "/")
-      if (normCwd.startsWith(normWs)) {
-        containerCwd = "/workspace" + origCwd.slice(origWs.length)
-      }
-    }
-    return ChildProcess.make("docker", [
-      ...envArgs,
-      "exec",
-      "-i",
-      "-w", containerCwd,
-      Sandbox.containerId,
-      "sh", "-c", command,
-    ], {
-      cwd,
-      stdin: "ignore",
-      detached: false,
-    })
-  }
-
   if (process.platform === "win32" && Shell.ps(shell)) {
     return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
       cwd,
@@ -417,7 +346,7 @@ export const ShellTool = Tool.define(
   Effect.gen(function* () {
     const config = yield* Config.Service
     const spawner = yield* ChildProcessSpawner
-    const fs = yield* AppFileSystem.Service
+    const fs = yield* FSUtil.Service
     const trunc = yield* Truncate.Service
     const plugin = yield* Plugin.Service
     const flags = yield* RuntimeFlags.Service
@@ -429,16 +358,16 @@ export const ShellTool = Tool.define(
         .pipe(Effect.catch(() => Effect.succeed([] as string[])))
       const file = lines[0]?.trim()
       if (!file) return
-      return AppFileSystem.normalizePath(file)
+      return FSUtil.normalizePath(file)
     })
 
     const resolvePath = Effect.fn("ShellTool.resolvePath")(function* (text: string, root: string, shell: string) {
       if (process.platform === "win32") {
-        if (Shell.posix(shell) && text.startsWith("/") && AppFileSystem.windowsPath(text) === text) {
+        if (Shell.posix(shell) && text.startsWith("/") && FSUtil.windowsPath(text) === text) {
           const file = yield* cygpath(shell, text)
           if (file) return file
         }
-        return AppFileSystem.normalizePath(path.resolve(root, AppFileSystem.windowsPath(text)))
+        return FSUtil.normalizePath(path.resolve(root, FSUtil.windowsPath(text)))
       }
       return path.resolve(root, text)
     })
@@ -474,7 +403,7 @@ export const ShellTool = Tool.define(
         if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
           for (const arg of pathArgs(command, ps, shellKind === "cmd")) {
             const resolved = yield* argPath(arg, cwd, ps, shell)
-            log.info("resolved path", { arg, resolved })
+            yield* Effect.logInfo("resolved path", { arg, resolved })
             if (!resolved || containsPath(resolved, instance)) continue
             const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
             scan.dirs.add(dir)
@@ -496,12 +425,10 @@ export const ShellTool = Tool.define(
         { cwd, sessionID: ctx.sessionID, callID: ctx.callID },
         { env: {} },
       )
-      const merged = {
+      return {
         ...process.env,
         ...extra.env,
       }
-      // Filter sensitive environment variables when running in Docker sandbox
-      return filterSensitiveEnv(merged)
     })
 
     const run = Effect.fn("ShellTool.run")(function* (
@@ -685,7 +612,7 @@ export const ShellTool = Tool.define(
         const name = Shell.name(shell)
         const limits = yield* trunc.limits()
         const prompt = ShellPrompt.render(name, process.platform, limits, defaultTimeoutMs)
-        log.info("shell tool using shell", { shell })
+        yield* Effect.logInfo("shell tool using shell", { shell })
 
         return {
           description: prompt.description,
@@ -708,7 +635,7 @@ export const ShellTool = Tool.define(
                   )
                   const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
-                  yield* ask(ctx, scan)
+                  yield* ask(ctx, scan, params)
                 }),
               )
 

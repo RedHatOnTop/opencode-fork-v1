@@ -192,13 +192,6 @@ export const dict = {
   "provider.custom.error.baseURL.format": "Должен начинаться с http:// или https://",
   "provider.custom.error.required": "Обязательно",
   "provider.custom.error.duplicate": "Дубликат",
-  "provider.custom.error.fetch": "Failed to fetch models",
-  "provider.custom.models.fetch": "Fetch models",
-  "provider.custom.models.fetching": "Fetching...",
-  "provider.custom.models.search": "Search models...",
-  "provider.custom.models.toggleAll": "Toggle all",
-  "provider.custom.models.selected": "{{count}} of {{total}} selected",
-  "provider.custom.models.noModelsFound": "No models found at this endpoint",
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} отключён",
   "provider.disconnect.toast.disconnected.description": "Модели {{provider}} больше недоступны.",
