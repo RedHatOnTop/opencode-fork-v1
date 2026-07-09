@@ -254,7 +254,7 @@ describe("session.retry.retryable", () => {
     expect(retryable).toEqual({ message: "Response decompression failed" })
   })
 
-  test("maps free limits to Go upsell action", () => {
+  test("maps free limits to a neutral free-tier message (fork: upsell removed)", () => {
     const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
       new SessionV1.APIError({
         message: "Free usage exceeded",
@@ -267,17 +267,20 @@ describe("session.retry.retryable", () => {
       }).toObject(),
     )
 
-    expect(SessionRetry.retryable(error, "opencode")).toEqual({
-      message: SessionRetry.GO_UPSELL_MESSAGE,
+    const result = SessionRetry.retryable(error, "opencode")
+    expect(result).toEqual({
+      message: "Free usage limit reached for this provider.",
       action: {
         reason: "free_tier_limit",
         provider: "opencode",
         title: "Free limit reached",
-        message: "Subscribe to OpenCode Go for reliable access to the best open-source models, starting at $5/month.",
-        label: "subscribe",
-        link: SessionRetry.GO_UPSELL_URL,
+        message: "The free usage limit for this provider has been reached.",
+        label: "dismiss",
       },
     })
+    // No upstream subscription promo or link should remain.
+    expect(JSON.stringify(result)).not.toContain("opencode.ai/go")
+    expect(JSON.stringify(result)).not.toContain("subscribe")
   })
 
   test("maps Go subscription limits to workspace PAYG upsell", () => {
