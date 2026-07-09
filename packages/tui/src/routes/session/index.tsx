@@ -85,6 +85,8 @@ import { LocationProvider } from "../../context/location"
 addDefaultParsers(parsers.parsers)
 
 // fork: Go upsell intentionally removed (commit 604e24158); keep it dropped on upstream sync.
+export const alwaysSeparate = new WeakSet<BoxRenderable>()
+
 const sessionBindingCommands = [
   "session.share",
   "session.rename",
