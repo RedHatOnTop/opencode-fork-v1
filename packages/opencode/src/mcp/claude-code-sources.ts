@@ -73,7 +73,13 @@ export function convertClaudeMcpEntry(entry: ClaudeMcpEntry): ConfigMCPV1.Info |
 function readMcpServers(fsys: FSUtil.Interface, file: string) {
   return Effect.gen(function* () {
     if (!(yield* fsys.existsSafe(file))) return {}
-    const parsed = yield* fsys.readJson(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    const parsed = yield* fsys.readJson(file).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Claude Code MCP source could not be parsed; skipping", { file, error }).pipe(
+          Effect.as(undefined),
+        ),
+      ),
+    )
     if (!parsed || typeof parsed !== "object") return {}
     const servers = (parsed as ClaudeMcpConfig).mcpServers
     if (!servers || typeof servers !== "object") return {}
@@ -86,11 +92,17 @@ function readMcpServers(fsys: FSUtil.Interface, file: string) {
 // Sources are merged in order; earlier definitions win on name conflicts so a
 // user's home config is not overridden by a project file. opencode.json (handled
 // by the caller) always takes final precedence over these discovered entries.
+//
+// Home configs are always read (the user's own machine). Project-local .mcp.json
+// travels with a repo and can spawn arbitrary local commands, so it is only read
+// when `includeProject` is true (opt-in) to avoid auto-executing an untrusted
+// file's server just by opening the directory.
 export function discoverClaudeCodeMcpServers(
   fsys: FSUtil.Interface,
   global: Global.Interface,
   directory: string,
   worktree: string,
+  includeProject: boolean,
 ) {
   return Effect.gen(function* () {
     const result: Record<string, ConfigMCPV1.Info> = {}
@@ -107,6 +119,8 @@ export function discoverClaudeCodeMcpServers(
         if (converted) result[name] = converted
       }
     }
+
+    if (!includeProject) return result
 
     // Project-local .mcp.json files, walked up from the workspace to the worktree root.
     // fsys.up returns the full path to each .mcp.json it finds.

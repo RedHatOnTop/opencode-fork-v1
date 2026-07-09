@@ -33,6 +33,10 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
     broad: bool("OPENCODE_DISABLE_CLAUDE_CODE"),
     direct: bool("OPENCODE_DISABLE_CLAUDE_CODE_MCP"),
   }).pipe(Config.map((flags) => flags.broad || flags.direct)),
+  // Opt-in: project-local .mcp.json travels with a repo, so a malicious file
+  // could auto-spawn a local server on open. Off by default; home (~/.claude,
+  // ~/.zcode) discovery stays on since those are the user's own trusted configs.
+  enableClaudeCodeProjectMcp: bool("OPENCODE_ENABLE_CLAUDE_CODE_PROJECT_MCP"),
   enableExa: Config.all({
     experimental,
     enabled: bool("OPENCODE_ENABLE_EXA"),

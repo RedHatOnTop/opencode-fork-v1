@@ -505,6 +505,7 @@ export const layer = Layer.effect(
             global,
             ctx.directory,
             ctx.worktree,
+            runtimeFlags.enableClaudeCodeProjectMcp,
           ).pipe(
             Effect.catch((error) =>
               Effect.logWarning("Claude Code MCP discovery failed", { error }).pipe(Effect.as({})),
