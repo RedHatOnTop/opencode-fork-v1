@@ -46,9 +46,21 @@ describe("fork integrity", () => {
     expect(read(f)).toMatch(/export const alwaysSeparate\s*=/)
   })
 
-  // Known-incomplete customization: commit 604e24158 removed the Go upsell from
-  // the TUI, but session/retry.ts still surfaces the upstream "subscribe to
-  // OpenCode Go" copy on FreeUsageLimitError. Promote to a real assertion once
-  // the retry-path upsell is neutralized. See audit finding F-2.
-  test.todo("upstream Go upsell removed from the retry path (session/retry.ts)", () => {})
+  test("upstream Go subscription upsell removed from the retry path", () => {
+    // The free-tier limit path must not carry the upstream "subscribe to
+    // OpenCode Go" promo or its link. (The GoUsageLimitError branch keeps its
+    // account-status link on purpose — that is operational info for paying
+    // users, not a cold upsell.)
+    const retry = read(path.join(OPENCODE, "session", "retry.ts"))
+    expect(retry).not.toContain("GO_UPSELL")
+    expect(retry).not.toContain("Subscribe to OpenCode Go")
+  })
+
+  test("project-local .mcp.json discovery is gated (not auto-spawned)", () => {
+    // Opening a repo with a malicious .mcp.json must not auto-spawn its server;
+    // the project walk is behind an opt-in flag.
+    const src = read(path.join(OPENCODE, "mcp", "claude-code-sources.ts"))
+    expect(src).toContain("includeProject")
+    expect(read(path.join(OPENCODE, "effect", "runtime-flags.ts"))).toContain("enableClaudeCodeProjectMcp")
+  })
 })
